@@ -1,0 +1,961 @@
+const nsSelect = document.getElementById('namespace-select');
+const wlSelect = document.getElementById('workload-select');
+const groupSelect = document.getElementById('group-select');
+const podSearch = document.getElementById('pod-search');
+const podCount = document.getElementById('pod-count');
+const tree = document.getElementById('tree');
+const topoEl = document.getElementById('topology');
+const tooltipEl = document.getElementById('tooltip');
+const detailPanel = document.getElementById('detail-panel');
+const detailTitle = document.getElementById('detail-title');
+const detailBody = document.getElementById('detail-body');
+
+const sidebar = document.getElementById('sidebar');
+const clusterListEl = document.getElementById('cluster-list');
+const showHiddenCheckbox = document.getElementById('show-hidden');
+
+let activeTab = 'topology';
+let allNodes = [];
+let allPods = [];
+let clusters = [];
+// Track expand state for group headers (keyed by group path)
+const expanded = new Map();
+// Track which pods are expanded to show container details
+const expandedPods = new Set();
+// Track which pods have their container dots fully expanded
+const expandedContainers = new Set();
+const MAX_DOTS = 5;
+
+async function fetchJSON(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+function statusClass(status) {
+  return 'status status-' + status.toLowerCase().replace(/[^a-z]/g, '');
+}
+
+function restartsClass(n) {
+  if (n >= 10) return 'restarts-bad';
+  if (n >= 3) return 'restarts-warn';
+  return '';
+}
+
+function esc(s) {
+  if (!s) return '';
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// Build a map of node name -> NodeInfo for quick lookup
+function nodeMap() {
+  const m = new Map();
+  for (const n of allNodes) m.set(n.name, n);
+  return m;
+}
+
+async function loadNamespaces() {
+  const namespaces = await fetchJSON('/api/namespaces');
+  const current = nsSelect.value;
+  nsSelect.innerHTML = '<option value="">All namespaces</option>';
+  for (const ns of namespaces) {
+    const opt = document.createElement('option');
+    opt.value = ns;
+    opt.textContent = ns;
+    if (ns === current) opt.selected = true;
+    nsSelect.appendChild(opt);
+  }
+}
+
+const progressBar = document.getElementById('progress-bar');
+const progressFill = document.getElementById('progress-fill');
+const progressText = document.getElementById('progress-text');
+
+function showProgress(pct, text) {
+  progressBar.classList.remove('hidden');
+  progressFill.style.width = pct + '%';
+  progressText.textContent = text;
+}
+
+function hideProgress() {
+  progressBar.classList.add('hidden');
+}
+
+// Wait for cache to be ready, showing progress
+async function waitForCache() {
+  showProgress(5, 'Connecting to cluster...');
+  while (true) {
+    try {
+      const p = await fetchJSON('/api/progress');
+      if (p.ready) {
+        showProgress(100, 'Ready');
+        hideProgress();
+        return;
+      }
+      if (p.total > 0) {
+        const pct = Math.max(5, Math.round((p.current / p.total) * 100));
+        showProgress(pct, `Fetching ${p.namespace}... (${p.current}/${p.total})`);
+      } else {
+        // No progress info yet — show indeterminate
+        showProgress(30, 'Loading cluster data...');
+      }
+    } catch (e) {
+      // server not ready yet
+    }
+    await new Promise(r => setTimeout(r, 300));
+  }
+}
+
+// All API calls are instant (served from server-side cache)
+async function loadData() {
+  const [nodesResult, podsResult] = await Promise.allSettled([
+    fetchJSON('/api/nodes'),
+    fetchJSON('/api/pods'),
+  ]);
+  if (nodesResult.status === 'fulfilled') allNodes = nodesResult.value;
+  if (podsResult.status === 'fulfilled') allPods = podsResult.value;
+
+  populateWorkloads();
+  render();
+}
+
+// --- Grouping helpers ---
+
+function groupBy(pods, keyFn) {
+  const groups = new Map();
+  for (const p of pods) {
+    const key = keyFn(p) || '__none__';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(p);
+  }
+  return groups;
+}
+
+function workloadKey(p) {
+  return p.workloadKind + '/' + (p.workloadName || p.name);
+}
+
+// --- Rendering ---
+
+function getFilteredPods() {
+  const ns = nsSelect.value;
+  const wl = wlSelect.value;
+  const filter = podSearch.value.toLowerCase();
+
+  let filtered = allPods;
+  if (ns) filtered = filtered.filter(p => p.namespace === ns);
+  if (wl) filtered = filtered.filter(p => (p.workloadKind + '/' + (p.workloadName || p.name)) === wl);
+  if (filter) filtered = filtered.filter(p => p.name.toLowerCase().includes(filter));
+
+  podCount.textContent = `${filtered.length} pods`;
+  return filtered;
+}
+
+function populateWorkloads() {
+  const ns = nsSelect.value;
+  let pods = allPods;
+  if (ns) pods = pods.filter(p => p.namespace === ns);
+
+  const workloads = new Map();
+  for (const p of pods) {
+    const key = p.workloadKind + '/' + (p.workloadName || p.name);
+    if (!workloads.has(key)) workloads.set(key, { kind: p.workloadKind, name: p.workloadName || p.name });
+  }
+
+  const current = wlSelect.value;
+  wlSelect.innerHTML = '<option value="">All workloads</option>';
+  const sorted = [...workloads.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  for (const [key, w] of sorted) {
+    const opt = document.createElement('option');
+    opt.value = key;
+    opt.textContent = `${w.name} (${w.kind})`;
+    if (key === current) opt.selected = true;
+    wlSelect.appendChild(opt);
+  }
+}
+
+function renderTree() {
+  const filtered = getFilteredPods();
+
+  const mode = groupSelect.value;
+  let html = '';
+
+  switch (mode) {
+    case 'flat':
+      html = renderFlat(filtered);
+      break;
+    case 'node':
+      html = renderByNode(filtered);
+      break;
+    case 'workload':
+      html = renderByWorkload(filtered);
+      break;
+    case 'node-workload':
+      html = renderByNodeWorkload(filtered);
+      break;
+    case 'workload-node':
+      html = renderByWorkloadNode(filtered);
+      break;
+  }
+
+  tree.innerHTML = html;
+  attachListeners();
+}
+
+function renderFlat(pods) {
+  let html = podTableHeader();
+  html += `<div class="flat-list">`;
+  for (const p of pods) {
+    html += podRow(p, true);
+  }
+  html += `</div>`;
+  return html;
+}
+
+function renderByNode(pods) {
+  const nodes = nodeMap();
+  const byNode = groupBy(pods, p => p.node);
+  let html = '';
+
+  for (const n of allNodes) {
+    const nodePods = byNode.get(n.name) || [];
+    if (podSearch.value && nodePods.length === 0) continue;
+    html += renderGroup(n.name, nodePods, nodeHeaderContent(n, nodePods.length));
+  }
+  const unassigned = byNode.get('__none__') || byNode.get('') || [];
+  if (unassigned.length > 0) {
+    html += renderGroup('__unassigned__', unassigned, `<span class="group-label">Unassigned</span> <span class="pod-count-badge">${unassigned.length} pods</span>`, true);
+  }
+  return html;
+}
+
+function renderByWorkload(pods) {
+  // First level: workload kind (Deployment, StatefulSet, etc.)
+  const byKind = groupBy(pods, p => p.workloadKind || 'Pod');
+  const kindOrder = [...byKind.keys()].sort();
+  let html = '';
+
+  for (const kind of kindOrder) {
+    const kindPods = byKind.get(kind);
+    const kindKey = 'k:' + kind;
+    const isOpen = isExpanded(kindKey);
+
+    // Count unique workloads in this kind
+    const workloadNames = new Set(kindPods.map(p => p.workloadName || p.name));
+
+    html += `<div class="tree-node">`;
+    html += `<div class="group-header" data-group="${esc(kindKey)}">`;
+    html += `<span class="node-toggle ${isOpen ? 'open' : ''}">&#9654;</span>`;
+    html += `<span class="workload-kind">${esc(kind)}</span>`;
+    html += `<span class="pod-count-badge">${workloadNames.size} workloads</span>`;
+    html += `<span class="pod-count-badge">${kindPods.length} pods</span>`;
+    html += `</div>`;
+    html += `<div class="group-children ${isOpen ? '' : 'collapsed'}">`;
+
+    // Second level: individual workloads
+    const byWorkload = groupBy(kindPods, p => p.workloadName || p.name);
+    const sorted = [...byWorkload.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [name, wPods] of sorted) {
+      if (podSearch.value && wPods.length === 0) continue;
+      html += renderGroup(kindKey + '/' + name, wPods, workloadHeaderContent(kind, name, wPods.length), false, true);
+    }
+
+    html += `</div></div>`;
+  }
+  return html;
+}
+
+function renderByNodeWorkload(pods) {
+  const nodes = nodeMap();
+  const byNode = groupBy(pods, p => p.node);
+  let html = '';
+
+  for (const n of allNodes) {
+    const nodePods = byNode.get(n.name) || [];
+    if (podSearch.value && nodePods.length === 0) continue;
+
+    const key = 'n:' + n.name;
+    const isOpen = isExpanded(key);
+    html += `<div class="tree-node">`;
+    html += `<div class="group-header" data-group="${esc(key)}">`;
+    html += `<span class="node-toggle ${isOpen ? 'open' : ''}">&#9654;</span>`;
+    html += nodeHeaderContent(n, nodePods.length);
+    html += `</div>`;
+    html += `<div class="group-children ${isOpen ? '' : 'collapsed'}">`;
+
+    // Sub-group by workload
+    const byWorkload = groupBy(nodePods, workloadKey);
+    const sorted = [...byWorkload.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+    for (const [wKey, wPods] of sorted) {
+      const [kind, name] = splitOnce(wKey, '/');
+      html += renderGroup(key + '/' + wKey, wPods, workloadHeaderContent(kind, name, wPods.length), false, true);
+    }
+
+    html += `</div></div>`;
+  }
+  return html;
+}
+
+function renderByWorkloadNode(pods) {
+  // First level: workload kind
+  const byKind = groupBy(pods, p => p.workloadKind || 'Pod');
+  const kindOrder = [...byKind.keys()].sort();
+  let html = '';
+
+  for (const kind of kindOrder) {
+    const kindPods = byKind.get(kind);
+    const kindKey = 'wn-k:' + kind;
+    const isKindOpen = isExpanded(kindKey);
+
+    const workloadNames = new Set(kindPods.map(p => p.workloadName || p.name));
+
+    html += `<div class="tree-node">`;
+    html += `<div class="group-header" data-group="${esc(kindKey)}">`;
+    html += `<span class="node-toggle ${isKindOpen ? 'open' : ''}">&#9654;</span>`;
+    html += `<span class="workload-kind">${esc(kind)}</span>`;
+    html += `<span class="pod-count-badge">${workloadNames.size} workloads</span>`;
+    html += `<span class="pod-count-badge">${kindPods.length} pods</span>`;
+    html += `</div>`;
+    html += `<div class="group-children ${isKindOpen ? '' : 'collapsed'}">`;
+
+    // Second level: individual workloads
+    const byWorkload = groupBy(kindPods, p => p.workloadName || p.name);
+    const sortedWorkloads = [...byWorkload.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+    for (const [wName, wPods] of sortedWorkloads) {
+      if (podSearch.value && wPods.length === 0) continue;
+
+      const wKey = kindKey + '/' + wName;
+      const isWOpen = isExpanded(wKey);
+      html += `<div class="tree-node nested">`;
+      html += `<div class="group-header" data-group="${esc(wKey)}">`;
+      html += `<span class="node-toggle ${isWOpen ? 'open' : ''}">&#9654;</span>`;
+      html += `<span class="group-label">${esc(wName)}</span>`;
+      html += `<span class="pod-count-badge">${wPods.length} pods</span>`;
+      html += `</div>`;
+      html += `<div class="group-children ${isWOpen ? '' : 'collapsed'}">`;
+
+      // Third level: nodes
+      const byNode = groupBy(wPods, p => p.node);
+      for (const n of allNodes) {
+        const nPods = byNode.get(n.name);
+        if (!nPods) continue;
+        html += renderGroup(wKey + '/' + n.name, nPods, nodeHeaderContent(n, nPods.length), false, true);
+      }
+      const unassigned = byNode.get('__none__') || byNode.get('') || [];
+      if (unassigned.length > 0) {
+        html += renderGroup(wKey + '/__unassigned__', unassigned, `<span class="group-label">Unassigned</span> <span class="pod-count-badge">${unassigned.length}</span>`, true, true);
+      }
+
+      html += `</div></div>`;
+    }
+
+    html += `</div></div>`;
+  }
+  return html;
+}
+
+// --- Shared rendering blocks ---
+
+function nodeHeaderContent(n, count) {
+  return `<span class="${statusClass(n.status)}">${esc(n.status)}</span>` +
+    `<span class="group-label">${esc(n.name)}</span>` +
+    `<span class="pod-count-badge">${count} pods</span>` +
+    `<span class="node-meta">` +
+    `<span>${esc(n.roles)}</span>` +
+    `<span>${esc(n.kubeletVersion)}</span>` +
+    `<span>${esc(n.cpuCapacity)} CPU</span>` +
+    `<span>${esc(n.memoryCapacity)}</span>` +
+    `</span>`;
+}
+
+function workloadHeaderContent(kind, name, count) {
+  return `<span class="workload-kind">${esc(kind)}</span>` +
+    `<span class="group-label">${esc(name)}</span>` +
+    `<span class="pod-count-badge">${count} pods</span>`;
+}
+
+function renderGroup(key, pods, headerContent, dashed, nested) {
+  const isOpen = isExpanded(key);
+  let html = `<div class="tree-node ${nested ? 'nested' : ''}">`;
+  html += `<div class="group-header ${dashed ? 'dashed' : ''}" data-group="${esc(key)}">`;
+  html += `<span class="node-toggle ${isOpen ? 'open' : ''}">&#9654;</span>`;
+  html += headerContent;
+  html += `</div>`;
+  html += `<div class="pod-list ${isOpen ? '' : 'collapsed'}">`;
+  for (const p of pods) {
+    html += podRow(p);
+  }
+  html += `</div></div>`;
+  return html;
+}
+
+function isExpanded(key) {
+  if (!expanded.has(key)) expanded.set(key, true);
+  return expanded.get(key);
+}
+
+// Column definitions: name, default width
+const columns = [
+  { name: 'Namespace', width: 120 },
+  { name: 'Name', width: 300 },
+  { name: 'Containers', width: 70 },
+  { name: 'Status', width: 110 },
+  { name: 'Ready', width: 50 },
+  { name: 'Restarts', width: 70 },
+  { name: 'Age', width: 50 },
+  { name: 'Tag', width: 100 },
+];
+
+function gridTemplateFromColumns() {
+  return columns.map(c => c.width + 'px').join(' ');
+}
+
+function podTableHeader() {
+  const tpl = gridTemplateFromColumns();
+  let h = `<div class="pod-table-header" style="grid-template-columns: ${tpl}">`;
+  columns.forEach((col, i) => {
+    h += `<span class="col-header" data-col="${i}">${esc(col.name)}`;
+    if (i < columns.length - 1) {
+      h += `<span class="col-resize" data-col="${i}"></span>`;
+    }
+    h += `</span>`;
+  });
+  h += `</div>`;
+  return h;
+}
+
+function applyGridTemplate() {
+  const tpl = gridTemplateFromColumns();
+  document.querySelectorAll('.pod-table-header, .pod-row').forEach(el => {
+    el.style.gridTemplateColumns = tpl;
+  });
+}
+
+// Drag-to-resize columns
+function initColumnResize() {
+  document.querySelectorAll('.col-resize').forEach(handle => {
+    handle.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const colIdx = parseInt(handle.dataset.col);
+      const startX = e.clientX;
+      const startWidth = columns[colIdx].width;
+
+      handle.classList.add('active');
+
+      const onMove = (e) => {
+        const delta = e.clientX - startX;
+        columns[colIdx].width = Math.max(30, startWidth + delta);
+        applyGridTemplate();
+      };
+
+      const onUp = () => {
+        handle.classList.remove('active');
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+      };
+
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+  });
+}
+
+function podRow(p, flat) {
+  const podId = esc(p.namespace + '/' + p.name);
+  const isOpen = expandedPods.has(podId);
+  const dotsExpanded = expandedContainers.has(podId);
+  let r = `<div class="pod-row-wrap">`;
+  r += `<div class="pod-row" style="grid-template-columns: ${gridTemplateFromColumns()}" data-pod="${podId}" data-pod-b64="${btoa(JSON.stringify(p))}">`;
+  r += `<span class="pod-ns">${esc(p.namespace)}</span>`;
+  r += `<span class="pod-name">${esc(p.name)}</span>`;
+
+  r += `<span class="pod-info-containers">`;
+  if (p.containers) {
+    for (const c of p.containers) {
+      r += `<span class="container-dot ${dotClass(c.status)}" title="${esc(c.name)}: ${esc(c.status)}"></span>`;
+    }
+  }
+  r += `</span>`;
+
+  r += `<span class="pod-col"><span class="${statusClass(p.status)}">${esc(p.status)}</span></span>`;
+  r += `<span class="pod-col pod-col-right">${esc(p.ready)}</span>`;
+  r += `<span class="pod-col pod-col-right ${restartsClass(p.restarts)}">${p.restarts === 0 ? '' : p.restarts}</span>`;
+  r += `<span class="pod-col pod-col-right">${esc(p.age)}</span>`;
+  const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
+  r += `<span class="pod-col pod-info-tag" title="${esc(tag)}">${esc(tag)}</span>`;
+  r += `</div>`;
+
+  if (isOpen && p.containers) {
+    r += `<div class="container-list">`;
+    for (const c of p.containers) {
+      r += `<div class="container-row">`;
+      r += `<span class="container-name">${esc(c.name)}</span>`;
+      r += `<span class="container-image">${esc(c.image)}</span>`;
+      r += `<span class="container-tag" title="${esc(c.tag)}">${esc(c.tag)}</span>`;
+      r += `</div>`;
+    }
+    r += `</div>`;
+  }
+  r += `</div>`;
+  return r;
+}
+
+function splitOnce(s, sep) {
+  const i = s.indexOf(sep);
+  if (i === -1) return [s, ''];
+  return [s.substring(0, i), s.substring(i + 1)];
+}
+
+// --- Detail panel ---
+
+function openDetail(p) {
+  detailTitle.textContent = p.name;
+
+  let html = '';
+
+  // Pod info
+  html += `<div class="detail-section">`;
+  html += `<div class="detail-section-title">Pod</div>`;
+  html += detailField('Name', p.name);
+  html += detailField('Namespace', p.namespace);
+  html += detailField('Status', p.status);
+  html += detailField('Ready', p.ready);
+  if (p.restarts > 0) html += detailField('Restarts', p.restarts);
+  html += detailField('Age', p.age);
+  html += detailField('Node', p.node);
+  html += `</div>`;
+
+  // Workload
+  if (p.workloadName) {
+    html += `<div class="detail-section">`;
+    html += `<div class="detail-section-title">Workload</div>`;
+    html += detailField('Kind', p.workloadKind);
+    html += detailField('Name', p.workloadName);
+    html += `</div>`;
+  }
+
+  // Containers
+  if (p.containers && p.containers.length > 0) {
+    html += `<div class="detail-section">`;
+    html += `<div class="detail-section-title">Containers (${p.containers.length})</div>`;
+    for (const c of p.containers) {
+      html += `<div class="detail-container-card">`;
+      html += `<div class="detail-container-name">${esc(c.name)}</div>`;
+      html += `<div class="detail-image-full">${esc(c.image)}:<span class="detail-image-tag">${esc(c.tag)}</span></div>`;
+      html += `</div>`;
+    }
+    html += `</div>`;
+  }
+
+  detailBody.innerHTML = html;
+  detailPanel.classList.remove('hidden');
+}
+
+function closeDetail() {
+  detailPanel.classList.add('hidden');
+}
+
+function detailField(label, value) {
+  return `<div class="detail-field"><span class="detail-field-label">${esc(label)}</span><span class="detail-field-value" title="${esc(String(value))}">${esc(String(value))}</span></div>`;
+}
+
+// --- Topology view ---
+
+function nodePool(name) {
+  // Strip trailing instance identifiers:
+  //   "other-5" → "other"               (numeric index)
+  //   "shards-dc3-10" → "shards-dc3"    (numeric index)
+  //   "scw-mee6-staging-other-01491037da69411fb40b727" → "scw-mee6-staging-other" (hash)
+  const parts = name.split('-');
+  let i = parts.length - 1;
+  while (i > 0) {
+    const seg = parts[i];
+    if (/^\d+$/.test(seg)) {
+      i--;
+    } else if (seg.length > 5 && /^[0-9a-f]+$/i.test(seg)) {
+      i--;
+    } else {
+      break;
+    }
+  }
+  return parts.slice(0, i + 1).join('-');
+}
+
+function dotClass(status) {
+  const s = status.toLowerCase().replace(/[^a-z]/g, '');
+  // Map to known classes
+  const known = ['running','succeeded','completed','pending','containercreating','failed','error','crashloopbackoff','imagepullbackoff','errimagepull','terminating'];
+  return 'topo-dot topo-dot-' + (known.includes(s) ? s : 'unknown');
+}
+
+function renderTopology() {
+  const filtered = getFilteredPods();
+  const filter = podSearch.value.toLowerCase();
+
+  // Group pods by node
+  const podsByNode = new Map();
+  for (const p of filtered) {
+    if (!p.node) continue;
+    if (!podsByNode.has(p.node)) podsByNode.set(p.node, []);
+    podsByNode.get(p.node).push(p);
+  }
+
+  // Group nodes by pool
+  const pools = new Map();
+  for (const n of allNodes) {
+    const pool = nodePool(n.name);
+    if (!pools.has(pool)) pools.set(pool, []);
+    pools.get(pool).push(n);
+  }
+
+  // Sort pools by name
+  const sortedPools = [...pools.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+
+  let html = '';
+  for (const [pool, nodes] of sortedPools) {
+    const totalPods = nodes.reduce((sum, n) => sum + (podsByNode.get(n.name) || []).length, 0);
+    if (filter && totalPods === 0) continue;
+
+    html += `<div class="topo-pool">`;
+    html += `<div class="topo-pool-header">${esc(pool)} <span class="pool-count">${nodes.length} nodes / ${totalPods} pods</span></div>`;
+    html += `<div class="topo-machines">`;
+
+    for (const n of nodes) {
+      const pods = podsByNode.get(n.name) || [];
+      html += `<div class="topo-machine ${n.status !== 'Ready' ? 'not-ready' : ''}">`;
+      html += `<div class="topo-machine-header">`;
+      html += `<span class="topo-machine-name">${esc(n.name)}</span>`;
+      html += `<span class="topo-machine-stats">${pods.length}</span>`;
+      html += `</div>`;
+      html += `<div class="topo-machine-resources">${esc(n.cpuCapacity)} CPU &middot; ${esc(n.memoryCapacity)}</div>`;
+      html += `<div class="topo-pods">`;
+      for (const p of pods) {
+        html += `<div class="${dotClass(p.status)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+      }
+      html += `</div>`;
+      html += `</div>`;
+    }
+
+    html += `</div></div>`;
+  }
+
+  topoEl.innerHTML = html;
+
+  // Attach hover tooltips
+  topoEl.querySelectorAll('.topo-dot').forEach(el => {
+    el.addEventListener('mouseenter', (e) => {
+      const p = JSON.parse(atob(el.dataset.podB64));
+      const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
+      tooltipEl.innerHTML =
+        `<div class="tooltip-row"><span class="tooltip-label">Pod</span> <span class="tooltip-value">${esc(p.name)}</span></div>` +
+        `<div class="tooltip-row"><span class="tooltip-label">Namespace</span> <span class="tooltip-value">${esc(p.namespace)}</span></div>` +
+        `<div class="tooltip-row"><span class="tooltip-label">Status</span> <span class="tooltip-value">${esc(p.status)}</span></div>` +
+        `<div class="tooltip-row"><span class="tooltip-label">Ready</span> <span class="tooltip-value">${esc(p.ready)}</span></div>` +
+        (p.restarts > 0 ? `<div class="tooltip-row"><span class="tooltip-label">Restarts</span> <span class="tooltip-value">${p.restarts}</span></div>` : '') +
+        `<div class="tooltip-row"><span class="tooltip-label">Age</span> <span class="tooltip-value">${esc(p.age)}</span></div>` +
+        (tag ? `<div class="tooltip-row"><span class="tooltip-label">Image</span> <span class="tooltip-value">${esc(tag)}</span></div>` : '') +
+        (p.workloadName ? `<div class="tooltip-row"><span class="tooltip-label">${esc(p.workloadKind)}</span> <span class="tooltip-value">${esc(p.workloadName)}</span></div>` : '');
+      tooltipEl.classList.remove('hidden');
+      positionTooltip(e);
+    });
+    el.addEventListener('mousemove', positionTooltip);
+    el.addEventListener('mouseleave', () => {
+      tooltipEl.classList.add('hidden');
+    });
+    el.addEventListener('click', () => {
+      const p = JSON.parse(atob(el.dataset.podB64));
+      tooltipEl.classList.add('hidden');
+      openDetail(p);
+    });
+  });
+}
+
+function positionTooltip(e) {
+  const x = e.clientX + 12;
+  const y = e.clientY + 12;
+  tooltipEl.style.left = x + 'px';
+  tooltipEl.style.top = y + 'px';
+}
+
+// --- Tab switching ---
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+  topoEl.classList.toggle('hidden', tab !== 'topology');
+  tree.classList.toggle('hidden', tab !== 'list');
+  // Show/hide list-only controls
+  document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
+  render();
+}
+
+function render() {
+  if (activeTab === 'topology') renderTopology();
+  else renderTree();
+}
+
+// --- Event listeners ---
+
+function attachListeners() {
+  tree.querySelectorAll('.group-header').forEach(el => {
+    el.addEventListener('click', () => {
+      const key = el.dataset.group;
+      expanded.set(key, !expanded.get(key));
+      renderTree();
+    });
+  });
+  tree.querySelectorAll('.pod-row').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = el.dataset.pod;
+      if (expandedPods.has(id)) expandedPods.delete(id);
+      else expandedPods.add(id);
+      renderTree();
+      if (el.dataset.podB64) {
+        openDetail(JSON.parse(atob(el.dataset.podB64)));
+      }
+    });
+  });
+  // "+N" container dots expander
+  tree.querySelectorAll('.containers-more').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = el.dataset.expandDots;
+      if (expandedContainers.has(id)) expandedContainers.delete(id);
+      else expandedContainers.add(id);
+      renderTree();
+    });
+  });
+  initColumnResize();
+}
+
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => switchTab(t.dataset.tab));
+});
+document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('expand-all').addEventListener('click', () => {
+  for (const key of expanded.keys()) expanded.set(key, true);
+  renderTree();
+});
+document.getElementById('collapse-all').addEventListener('click', () => {
+  for (const key of expanded.keys()) expanded.set(key, false);
+  renderTree();
+});
+nsSelect.addEventListener('change', () => { populateWorkloads(); render(); });
+wlSelect.addEventListener('change', render);
+groupSelect.addEventListener('change', render);
+podSearch.addEventListener('input', render);
+
+let loading = false;
+
+async function refresh() {
+  if (loading) return;
+  loading = true;
+  try {
+    await loadData();
+  } catch (e) {
+    console.error('refresh failed:', e);
+  } finally {
+    loading = false;
+  }
+}
+
+// Initial setup: hide list-only controls
+document.querySelectorAll('.list-only').forEach(el => el.classList.add('hidden-ctrl'));
+
+// --- Sidebar / Cluster management ---
+
+async function loadClusters() {
+  try {
+    clusters = await fetchJSON('/api/clusters');
+  } catch (e) {
+    clusters = [];
+  }
+  renderSidebar();
+}
+
+function getSetting(key, defaultValue) {
+  const v = localStorage.getItem('kglance-' + key);
+  if (v === null) return defaultValue;
+  return v === 'true';
+}
+
+function setSetting(key, value) {
+  localStorage.setItem('kglance-' + key, value);
+}
+
+function renderSidebar() {
+  const showHidden = showHiddenCheckbox.checked;
+  const showAllContexts = getSetting('all-contexts', false);
+  let visible = clusters;
+  if (!showAllContexts) visible = visible.filter(c => c.isDefault);
+  if (!showHidden) visible = visible.filter(c => !c.hidden);
+
+  let html = '';
+  for (const c of visible) {
+    const cls = (c.active ? ' active' : '') + (c.hidden ? ' hidden-cluster' : '');
+    const fileName = c.filePath.split('/').pop();
+    html += `<div class="cluster-item${cls}" data-cluster-id="${esc(c.id)}">`;
+    html += `<div class="cluster-item-row">`;
+    html += `<span class="cluster-name">${esc(c.displayName)}</span>`;
+    html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8230;</span>`;
+    html += `</div>`;
+    html += `<span class="cluster-server">${esc(c.server)}</span>`;
+    html += `<span class="cluster-file">${esc(fileName)}</span>`;
+    html += `</div>`;
+  }
+  clusterListEl.innerHTML = html;
+
+  // Click to switch
+  clusterListEl.querySelectorAll('.cluster-item').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.closest('.cluster-menu-btn')) return;
+      switchCluster(el.dataset.clusterId);
+    });
+  });
+
+  // Menu button
+  clusterListEl.querySelectorAll('.cluster-menu-btn').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      showClusterMenu(el.dataset.menuId, e.clientX, e.clientY);
+    });
+  });
+}
+
+async function switchCluster(id) {
+  try {
+    showProgress(0, 'Switching cluster...');
+    allNodes = [];
+    allPods = [];
+    render();
+
+    await fetch('/api/clusters/switch', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id }),
+    });
+
+    await loadClusters();
+    await waitForCache();
+    await loadNamespaces();
+    await refresh();
+  } catch (e) {
+    console.error('switch failed:', e);
+    hideProgress();
+  }
+}
+
+let activeMenu = null;
+
+function showClusterMenu(id, x, y) {
+  closeClusterMenu();
+  const c = clusters.find(c => c.id === id);
+  if (!c) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'cluster-menu';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  const renameItem = document.createElement('div');
+  renameItem.className = 'cluster-menu-item';
+  renameItem.textContent = 'Rename';
+  renameItem.addEventListener('click', () => {
+    closeClusterMenu();
+    renameCluster(id, c.displayName);
+  });
+  menu.appendChild(renameItem);
+
+  const hideItem = document.createElement('div');
+  hideItem.className = 'cluster-menu-item';
+  hideItem.textContent = c.hidden ? 'Show' : 'Hide';
+  hideItem.addEventListener('click', () => {
+    closeClusterMenu();
+    toggleHideCluster(id, !c.hidden);
+  });
+  menu.appendChild(hideItem);
+
+  document.body.appendChild(menu);
+  activeMenu = menu;
+
+  // Close on outside click
+  setTimeout(() => {
+    document.addEventListener('click', closeClusterMenu, { once: true });
+  }, 0);
+}
+
+function closeClusterMenu() {
+  if (activeMenu) {
+    activeMenu.remove();
+    activeMenu = null;
+  }
+}
+
+async function renameCluster(id, currentName) {
+  const newName = prompt('Display name:', currentName);
+  if (newName === null || newName === currentName) return;
+  await fetch('/api/clusters/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, displayName: newName }),
+  });
+  await loadClusters();
+}
+
+async function toggleHideCluster(id, hidden) {
+  await fetch('/api/clusters/hide', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, hidden }),
+  });
+  await loadClusters();
+}
+
+// Sidebar toggle
+const sidebarCollapsed = localStorage.getItem('kglance-sidebar-collapsed') === 'true';
+if (sidebarCollapsed) sidebar.classList.add('collapsed');
+
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  sidebar.classList.toggle('collapsed');
+  localStorage.setItem('kglance-sidebar-collapsed', sidebar.classList.contains('collapsed'));
+});
+
+showHiddenCheckbox.addEventListener('change', renderSidebar);
+
+// Settings modal
+const settingsModal = document.getElementById('settings-modal');
+const allContextsCheckbox = document.getElementById('setting-all-contexts');
+
+allContextsCheckbox.checked = getSetting('all-contexts', false);
+
+document.getElementById('settings-btn').addEventListener('click', () => {
+  settingsModal.classList.remove('hidden');
+});
+
+document.getElementById('settings-close').addEventListener('click', () => {
+  settingsModal.classList.add('hidden');
+});
+
+settingsModal.addEventListener('click', (e) => {
+  if (e.target === settingsModal) settingsModal.classList.add('hidden');
+});
+
+allContextsCheckbox.addEventListener('change', () => {
+  setSetting('all-contexts', allContextsCheckbox.checked);
+  renderSidebar();
+});
+
+// Startup
+(async () => {
+  await loadClusters();
+  await waitForCache();
+  await loadNamespaces();
+  await refresh();
+  setInterval(refresh, 3000);
+  setInterval(loadNamespaces, 15000);
+})();

@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>kglance</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="app-layout">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-header">
+        <span class="sidebar-title">Clusters</span>
+        <button id="sidebar-toggle" class="sidebar-toggle-btn" title="Collapse">&#x276E;</button>
+      </div>
+      <div class="sidebar-controls">
+        <label class="sidebar-show-hidden"><input type="checkbox" id="show-hidden"> Show hidden</label>
+      </div>
+      <div id="cluster-list" class="cluster-list"></div>
+    </aside>
+    <div id="main-content">
+      <header>
+        <h1>kglance</h1>
+        <div class="tabs">
+          <button class="tab active" data-tab="topology">Topology</button>
+          <button class="tab" data-tab="list">List</button>
+        </div>
+        <div class="controls">
+          <select id="namespace-select">
+            <option value="">All namespaces</option>
+          </select>
+          <select id="workload-select">
+            <option value="">All workloads</option>
+          </select>
+          <select id="group-select" class="list-only">
+            <option value="flat">Flat</option>
+            <option value="node">Group by Node</option>
+            <option value="workload">Group by Workload</option>
+            <option value="node-workload">Node / Workload</option>
+            <option value="workload-node">Workload / Node</option>
+          </select>
+          <input type="text" id="pod-search" placeholder="Filter pods...">
+          <span id="pod-count"></span>
+          <button id="expand-all" class="list-only" title="Expand all">&#9660;</button>
+          <button id="collapse-all" class="list-only" title="Collapse all">&#9654;</button>
+          <span id="refresh-indicator" title="Auto-refreshes every 3s"></span>
+          <button id="settings-btn" class="settings-btn" title="Settings">&#9881;</button>
+        </div>
+      </header>
+      <div id="progress-bar" class="progress-bar hidden">
+        <div class="progress-track">
+          <div id="progress-fill" class="progress-fill"></div>
+        </div>
+        <span id="progress-text" class="progress-text"></span>
+      </div>
+      <main>
+        <div id="topology" class="view"></div>
+        <div id="tree" class="view hidden"></div>
+      </main>
+    </div>
+  </div>
+  <div id="detail-panel" class="detail-panel hidden">
+    <div class="detail-header">
+      <span id="detail-title" class="detail-title"></span>
+      <button id="detail-close" class="detail-close">&times;</button>
+    </div>
+    <div id="detail-body" class="detail-body"></div>
+  </div>
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Settings</span>
+        <button id="settings-close" class="detail-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="setting-row">
+          <label class="setting-label">
+            <input type="checkbox" id="setting-all-contexts">
+            Show all contexts per kubeconfig
+          </label>
+          <span class="setting-hint">When off, only the default context from each file is shown. Turn on to see control planes and other contexts.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="tooltip" class="tooltip hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>
