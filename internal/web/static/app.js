@@ -950,8 +950,28 @@ allContextsCheckbox.addEventListener('change', () => {
   renderSidebar();
 });
 
+// Update check
+async function checkForUpdate() {
+  try {
+    const info = await fetchJSON('/api/version');
+    if (info.hasUpdate) {
+      const banner = document.getElementById('update-banner');
+      document.getElementById('update-text').textContent = `New version available: v${info.latest} (current: v${info.current})`;
+      document.getElementById('update-link').href = info.updateUrl;
+      banner.classList.remove('hidden');
+    }
+  } catch (e) {
+    // silently ignore
+  }
+}
+
+document.getElementById('update-dismiss').addEventListener('click', () => {
+  document.getElementById('update-banner').classList.add('hidden');
+});
+
 // Startup
 (async () => {
+  checkForUpdate();
   await loadClusters();
   await waitForCache();
   await loadNamespaces();

@@ -7,6 +7,7 @@ import (
 
 	"kglance/internal/cluster"
 	"kglance/internal/kube"
+	"kglance/internal/update"
 )
 
 //go:embed static
@@ -28,6 +29,9 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	mux.HandleFunc("/api/clusters/switch", cluster.HandleSwitchCluster(mgr))
 	mux.HandleFunc("/api/clusters/rename", cluster.HandleRenameCluster(mgr))
 	mux.HandleFunc("/api/clusters/hide", cluster.HandleHideCluster(mgr))
+
+	// Version / update check
+	mux.HandleFunc("/api/version", update.HandleVersion)
 
 	// Static files
 	staticFS, _ := fs.Sub(staticFiles, "static")

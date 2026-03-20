@@ -30,7 +30,7 @@ func main() {
 			log.Fatalf("Failed to listen: %v", err)
 		}
 		url := fmt.Sprintf("http://%s", listener.Addr().String())
-		fmt.Printf("kubeui running at %s\n", url)
+		fmt.Printf("kglance running at %s\n", url)
 		go openBrowser(url)
 		log.Fatal(srv.Serve(listener))
 	} else {

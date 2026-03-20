@@ -1,3 +1,4 @@
 kglance
 kubeui
 dist/
+.DS_Store
