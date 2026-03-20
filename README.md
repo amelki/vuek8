@@ -4,6 +4,17 @@ A fast, lightweight Kubernetes dashboard. A minimal alternative to Lens.
 
 kglance auto-discovers your kubeconfig files, connects to your clusters, and gives you a real-time view of your nodes and pods — without the bloat.
 
+## Download
+
+| Platform | Download |
+|----------|----------|
+| **macOS (Apple Silicon)** | [KGlance-0.1.0-macos-arm64.dmg](https://github.com/amelki/kglance/releases/latest/download/KGlance-0.1.0-macos-arm64.dmg) |
+| **macOS (Intel)** | [kglance-macos-amd64](https://github.com/amelki/kglance/releases/latest/download/kglance-macos-amd64) |
+| **Linux** | [kglance-linux-amd64](https://github.com/amelki/kglance/releases/latest/download/kglance-linux-amd64) |
+| **Windows** | [kglance-windows-amd64.exe](https://github.com/amelki/kglance/releases/latest/download/kglance-windows-amd64.exe) |
+
+> macOS Apple Silicon: mount the DMG, drag to Applications. All others: run with `--browser` flag.
+
 ## Features
 
 - **Topology view** — Visual map of your cluster: nodes grouped by pool, pods as colored dots (green = running, red = error, yellow = pending). Hover for details, click to inspect.
