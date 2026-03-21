@@ -5,7 +5,8 @@ LDFLAGS=-s -w -X kglance/internal/update.Version=$(VERSION)
 
 .PHONY: dev build app dmg clean
 
-# Dev mode: fast build, opens in browser (no CGO needed)
+# Dev mode: build once, then just refresh browser for frontend changes
+# Only re-run 'make dev' when Go code changes
 dev:
 	go build -ldflags="$(LDFLAGS)" -o $(BINARY) .
 	./$(BINARY) --browser

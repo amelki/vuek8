@@ -12,7 +12,6 @@ const detailBody = document.getElementById('detail-body');
 
 const sidebar = document.getElementById('sidebar');
 const clusterListEl = document.getElementById('cluster-list');
-const showHiddenCheckbox = document.getElementById('show-hidden');
 
 let activeTab = 'topology';
 let allNodes = [];
@@ -887,7 +886,7 @@ async function saveSetting(key, value) {
 }
 
 function renderSidebar() {
-  const showHidden = showHiddenCheckbox.checked;
+  const showHidden = appSettings.showHidden || false;
   const showAllContexts = appSettings.showAllContexts || false;
   let visible = clusters;
   if (!showAllContexts) visible = visible.filter(c => c.isDefault || c.active);
@@ -900,7 +899,7 @@ function renderSidebar() {
     html += `<div class="cluster-item${cls}" data-cluster-id="${esc(c.id)}">`;
     html += `<div class="cluster-item-row">`;
     html += `<span class="cluster-name">${esc(c.displayName)}</span>`;
-    html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8230;</span>`;
+    html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8942;</span>`;
     html += `</div>`;
     html += `<span class="cluster-file">${esc(fileName)}</span>`;
     html += `<span class="cluster-server">${esc(c.server)}</span>`;
@@ -924,6 +923,15 @@ function renderSidebar() {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
       showClusterMenu(el.dataset.menuId, e.clientX, e.clientY);
+    });
+  });
+
+  // Right-click context menu on cluster items
+  clusterListEl.querySelectorAll('.cluster-item').forEach(el => {
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      showClusterMenu(el.dataset.clusterId, e.clientX, e.clientY);
     });
   });
 }
@@ -1051,28 +1059,61 @@ document.getElementById('sidebar-toggle').addEventListener('click', () => {
   saveSetting('sidebarCollapsed', sidebar.classList.contains('collapsed'));
 });
 
-showHiddenCheckbox.addEventListener('change', renderSidebar);
+// Options popup menu
+let optionsMenu = null;
 
-// Settings modal
-const settingsModal = document.getElementById('settings-modal');
-const allContextsCheckbox = document.getElementById('setting-all-contexts');
+function showOptionsMenu() {
+  closeOptionsMenu();
+  const btn = document.getElementById('sidebar-options-btn');
+  const rect = btn.getBoundingClientRect();
 
-document.getElementById('settings-btn').addEventListener('click', () => {
-  allContextsCheckbox.checked = appSettings.showAllContexts || false;
-  settingsModal.classList.remove('hidden');
-});
+  const menu = document.createElement('div');
+  menu.className = 'options-menu';
+  menu.style.left = rect.left + 'px';
+  menu.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
 
-document.getElementById('settings-close').addEventListener('click', () => {
-  settingsModal.classList.add('hidden');
-});
+  const showHidden = appSettings.showHidden || false;
+  const showAllContexts = appSettings.showAllContexts || false;
 
-settingsModal.addEventListener('click', (e) => {
-  if (e.target === settingsModal) settingsModal.classList.add('hidden');
-});
+  menu.innerHTML = `
+    <div class="options-menu-item" data-option="showHidden">
+      <span class="options-check">${showHidden ? '&#10003;' : ''}</span>
+      Show hidden clusters
+    </div>
+    <div class="options-menu-item" data-option="showAllContexts">
+      <span class="options-check">${showAllContexts ? '&#10003;' : ''}</span>
+      Show all contexts per kubeconfig
+    </div>
+  `;
 
-allContextsCheckbox.addEventListener('change', () => {
-  saveSetting('showAllContexts', allContextsCheckbox.checked);
-  renderSidebar();
+  menu.querySelectorAll('.options-menu-item').forEach(item => {
+    item.addEventListener('click', async () => {
+      const key = item.dataset.option;
+      await saveSetting(key, !appSettings[key]);
+      renderSidebar();
+      showOptionsMenu(); // re-render menu with updated checkmarks
+    });
+  });
+
+  document.body.appendChild(menu);
+  optionsMenu = menu;
+
+  setTimeout(() => {
+    document.addEventListener('click', closeOptionsMenu, { once: true });
+  }, 0);
+}
+
+function closeOptionsMenu() {
+  if (optionsMenu) {
+    optionsMenu.remove();
+    optionsMenu = null;
+  }
+}
+
+document.getElementById('sidebar-options-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  if (optionsMenu) closeOptionsMenu();
+  else showOptionsMenu();
 });
 
 // Update check

@@ -15,8 +15,7 @@
       </div>
       <div id="cluster-list" class="cluster-list"></div>
       <div class="sidebar-footer">
-        <label class="sidebar-show-hidden"><input type="checkbox" id="show-hidden"> Show hidden</label>
-        <button id="settings-btn" class="sidebar-settings-btn" title="Settings">&#9881; Settings</button>
+        <button id="sidebar-options-btn" class="sidebar-options-btn">Options</button>
       </div>
     </aside>
     <div id="main-content">
@@ -85,23 +84,6 @@
         <div class="modal-actions">
           <button id="rename-cancel" class="btn btn-ghost">Cancel</button>
           <button id="rename-confirm" class="btn btn-primary">Rename</button>
-        </div>
-      </div>
-    </div>
-  </div>
-  <div id="settings-modal" class="modal-overlay hidden">
-    <div class="modal">
-      <div class="modal-header">
-        <span class="modal-title">Settings</span>
-        <button id="settings-close" class="detail-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div class="setting-row">
-          <label class="setting-label">
-            <input type="checkbox" id="setting-all-contexts">
-            Show all contexts per kubeconfig
-          </label>
-          <span class="setting-hint">When off, only the default context from each file is shown. Turn on to see control planes and other contexts.</span>
         </div>
       </div>
     </div>

@@ -4,6 +4,7 @@ import (
 	"embed"
 	"io/fs"
 	"net/http"
+	"os"
 
 	"kglance/internal/cluster"
 	"kglance/internal/kube"
@@ -12,6 +13,8 @@ import (
 
 //go:embed static
 var staticFiles embed.FS
+
+var DevMode bool
 
 func NewServer(mgr *cluster.Manager) *http.Server {
 	mux := http.NewServeMux()
@@ -35,9 +38,21 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	// Version / update check
 	mux.HandleFunc("/api/version", update.HandleVersion)
 
-	// Static files
-	staticFS, _ := fs.Sub(staticFiles, "static")
-	mux.Handle("/", http.FileServer(http.FS(staticFS)))
+	// Static files — from disk in dev mode, embedded otherwise
+	if DevMode {
+		// Serve from disk — changes are reflected on browser refresh
+		mux.Handle("/", http.FileServer(http.Dir("internal/web/static")))
+	} else {
+		staticFS, _ := fs.Sub(staticFiles, "static")
+		mux.Handle("/", http.FileServer(http.FS(staticFS)))
+	}
 
 	return &http.Server{Handler: mux}
+}
+
+func init() {
+	// Auto-detect dev mode: if the static dir exists on disk, we're in the source tree
+	if _, err := os.Stat("internal/web/static"); err == nil {
+		DevMode = true
+	}
 }
