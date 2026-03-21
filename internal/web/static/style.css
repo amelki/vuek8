@@ -1061,23 +1061,12 @@ main {
 
 .detail-body {
   flex: 1;
-  overflow: hidden;
+  overflow-y: auto;
   padding: 16px;
-  display: flex;
-  flex-direction: column;
 }
 
 .detail-section {
   margin-bottom: 16px;
-  flex-shrink: 0;
-}
-
-.detail-section:last-child {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  margin-bottom: 0;
 }
 
 .detail-section-title {
@@ -1227,11 +1216,10 @@ main {
   font-size: 11px;
   line-height: 1.5;
   color: #8b949e;
-  flex: 1;
+  height: 50vh;
   overflow: auto;
   white-space: pre;
   word-break: normal;
-  min-height: 0;
 }
 
 .detail-logs-controls {

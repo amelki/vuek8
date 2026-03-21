@@ -17,6 +17,7 @@ let apiBase = ''; // empty = same origin (browser mode), set to http://... in na
 let activeTab = 'topology';
 let allNodes = [];
 let allPods = [];
+let allMetrics = {}; // key: "namespace/podName" -> { cpuMilli, memBytes }
 let clusters = [];
 // Track expand state for group headers (keyed by group path)
 const expanded = new Map();
@@ -188,12 +189,24 @@ async function waitForCache() {
 
 // All API calls are instant (served from server-side cache)
 async function loadDataQuiet() {
-  const [nodesResult, podsResult] = await Promise.allSettled([
+  const [nodesResult, podsResult, metricsResult] = await Promise.allSettled([
     fetchJSON('/api/nodes'),
     fetchJSON('/api/pods'),
+    fetchJSON('/api/metrics'),
   ]);
   if (nodesResult.status === 'fulfilled') allNodes = nodesResult.value;
   if (podsResult.status === 'fulfilled') allPods = podsResult.value;
+  if (metricsResult.status === 'fulfilled' && metricsResult.value) {
+    allMetrics = {};
+    for (const pm of metricsResult.value) {
+      let totalCPU = 0, totalMem = 0;
+      for (const cm of (pm.containers || [])) {
+        totalCPU += cm.cpuMilli;
+        totalMem += cm.memBytes;
+      }
+      allMetrics[pm.namespace + '/' + pm.name] = { cpuMilli: totalCPU, memBytes: totalMem };
+    }
+  }
   populateWorkloads();
   render();
 }
@@ -624,6 +637,49 @@ function openDetail(p) {
   html += detailField('Node', p.node);
   html += `</div>`;
 
+  // Resources
+  const mKey = p.namespace + '/' + p.name;
+  const m = allMetrics[mKey];
+  html += `<div class="detail-section">`;
+  html += `<div class="detail-section-title">Resources</div>`;
+  if (m) {
+    const cpuLim = p.cpuLimitMilli || 0;
+    const memLim = p.memLimitBytes || 0;
+    const memMi = Math.round(m.memBytes / 1024 / 1024);
+    const memLimMi = memLim > 0 ? Math.round(memLim / 1024 / 1024) : 0;
+
+    let cpuDetail = fmtCPU(m.cpuMilli);
+    if (cpuLim > 0) {
+      cpuDetail += ' / ' + fmtCPU(cpuLim) + ' limit (' + Math.round((m.cpuMilli / cpuLim) * 100) + '%)';
+    } else {
+      const nodeCPU = getNodeCPUMilli(p.node);
+      if (nodeCPU > 0) {
+        cpuDetail += ' / ' + fmtCPU(nodeCPU) + ' node (' + Math.round((m.cpuMilli / nodeCPU) * 100) + '%)';
+      } else {
+        cpuDetail += ' (no limit)';
+      }
+    }
+    html += detailField('CPU Usage', cpuDetail);
+    let memDetail = fmtMem(m.memBytes);
+    if (memLim > 0) {
+      memDetail += ' / ' + fmtMem(memLim) + ' limit (' + Math.round((m.memBytes / memLim) * 100) + '%)';
+    } else {
+      const nodeMem = getNodeMemBytes(p.node);
+      if (nodeMem > 0) {
+        memDetail += ' / ' + fmtMem(nodeMem) + ' node (' + Math.round((m.memBytes / nodeMem) * 100) + '%)';
+      } else {
+        memDetail += ' (no limit)';
+      }
+    }
+    html += detailField('Memory Usage', memDetail);
+  } else {
+    html += detailField('CPU Request', p.cpuRequestMilli > 0 ? fmtCPU(p.cpuRequestMilli) : '-');
+    html += detailField('CPU Limit', p.cpuLimitMilli > 0 ? fmtCPU(p.cpuLimitMilli) : '-');
+    html += detailField('Mem Request', p.memRequestBytes > 0 ? fmtMem(p.memRequestBytes) : '-');
+    html += detailField('Mem Limit', p.memLimitBytes > 0 ? fmtMem(p.memLimitBytes) : '-');
+  }
+  html += `</div>`;
+
   // Workload
   if (p.workloadName) {
     html += `<div class="detail-section">`;
@@ -1012,9 +1068,77 @@ function nodePool(name) {
 
 function dotClass(status) {
   const s = status.toLowerCase().replace(/[^a-z]/g, '');
-  // Map to known classes
   const known = ['running','succeeded','completed','pending','containercreating','failed','error','crashloopbackoff','imagepullbackoff','errimagepull','terminating'];
   return 'topo-dot topo-dot-' + (known.includes(s) ? s : 'unknown');
+}
+
+function getColorMode() {
+  return document.getElementById('color-mode').value;
+}
+
+function getNodeCPUMilli(nodeName) {
+  const node = allNodes.find(n => n.name === nodeName);
+  if (!node) return 0;
+  return parseInt(node.cpuCapacity) * 1000;
+}
+
+function getNodeMemBytes(nodeName) {
+  const node = allNodes.find(n => n.name === nodeName);
+  if (!node) return 0;
+  // memoryCapacity is like "125.4Gi"
+  const m = node.memoryCapacity.match(/([\d.]+)Gi/);
+  if (m) return parseFloat(m[1]) * 1024 * 1024 * 1024;
+  return 0;
+}
+
+function fmtCPU(milli) {
+  const v = milli / 1000;
+  if (v >= 10) return Math.round(v) + ' CPU';
+  if (v >= 1) return v.toFixed(1) + ' CPU';
+  return v.toFixed(2) + ' CPU';
+}
+
+function fmtMem(bytes) {
+  if (bytes <= 0) return '0';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return gb % 1 === 0 ? gb + ' GB' : gb.toFixed(1) + ' GB';
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 1) return Math.round(mb) + ' MB';
+  return Math.round(bytes / 1024) + ' KB';
+}
+
+function resourceColor(pct) {
+  if (pct < 10) return 'background: #238636;';
+  if (pct < 30) return 'background: #3fb950;';
+  if (pct < 60) return 'background: #d29922;';
+  if (pct < 85) return 'background: #da6d28;';
+  return 'background: #f85149;';
+}
+
+function dotStyle(p) {
+  const mode = getColorMode();
+  if (mode === 'status') return '';
+  const key = p.namespace + '/' + p.name;
+  const m = allMetrics[key];
+  if (!m) return 'background: #21262d;';
+
+  if (mode === 'cpu') {
+    const limit = p.cpuLimitMilli || 0;
+    if (limit > 0) return resourceColor((m.cpuMilli / limit) * 100);
+    const nodeCPU = getNodeCPUMilli(p.node);
+    if (nodeCPU > 0) return resourceColor((m.cpuMilli / nodeCPU) * 100);
+    return 'background: #21262d;';
+  }
+
+  if (mode === 'mem') {
+    const limit = p.memLimitBytes || 0;
+    if (limit > 0) return resourceColor((m.memBytes / limit) * 100);
+    const nodeMem = getNodeMemBytes(p.node);
+    if (nodeMem > 0) return resourceColor((m.memBytes / nodeMem) * 100);
+    return 'background: #21262d;';
+  }
+
+  return '';
 }
 
 function renderTopology() {
@@ -1060,7 +1184,7 @@ function renderTopology() {
       html += `<div class="topo-machine-resources">${esc(n.cpuCapacity)} CPU &middot; ${esc(n.memoryCapacity)}</div>`;
       html += `<div class="topo-pods">`;
       for (const p of pods) {
-        html += `<div class="${dotClass(p.status)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+        html += `<div class="${dotClass(p.status)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
       }
       html += `</div>`;
       html += `</div>`;
@@ -1085,6 +1209,42 @@ function renderTopology() {
         `<div class="tooltip-row"><span class="tooltip-label">Age</span> <span class="tooltip-value">${esc(p.age)}</span></div>` +
         (tag ? `<div class="tooltip-row"><span class="tooltip-label">Image</span> <span class="tooltip-value">${esc(tag)}</span></div>` : '') +
         (p.workloadName ? `<div class="tooltip-row"><span class="tooltip-label">${esc(p.workloadKind)}</span> <span class="tooltip-value">${esc(p.workloadName)}</span></div>` : '');
+      // Add CPU/Memory info if available
+      const metricKey = p.namespace + '/' + p.name;
+      const metric = allMetrics[metricKey];
+      if (metric) {
+        const cpuLimit = p.cpuLimitMilli || 0;
+        const memLimit = p.memLimitBytes || 0;
+        const cpuPct = cpuLimit > 0 ? Math.round((metric.cpuMilli / cpuLimit) * 100) : null;
+        const memMi = Math.round(metric.memBytes / 1024 / 1024);
+        const memLimitMi = memLimit > 0 ? Math.round(memLimit / 1024 / 1024) : 0;
+
+        let cpuText = fmtCPU(metric.cpuMilli);
+        if (cpuLimit > 0) {
+          cpuText += ` / ${fmtCPU(cpuLimit)} (${cpuPct}%)`;
+        } else {
+          const nodeCPU = getNodeCPUMilli(p.node);
+          if (nodeCPU > 0) {
+            const nodePct = Math.round((metric.cpuMilli / nodeCPU) * 100);
+            cpuText += ` / ${fmtCPU(nodeCPU)} node (${nodePct}%)`;
+          }
+        }
+
+        let memText = fmtMem(metric.memBytes);
+        if (memLimit > 0) {
+          const memPct = Math.round((metric.memBytes / memLimit) * 100);
+          memText += ` / ${fmtMem(memLimit)} limit (${memPct}%)`;
+        } else {
+          const nodeMem = getNodeMemBytes(p.node);
+          if (nodeMem > 0) {
+            const nodePct = Math.round((metric.memBytes / nodeMem) * 100);
+            memText += ` / ${fmtMem(nodeMem)} node (${nodePct}%)`;
+          }
+        }
+
+        tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">CPU</span> <span class="tooltip-value">${cpuText}</span></div>`;
+        tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">Memory</span> <span class="tooltip-value">${memText}</span></div>`;
+      }
       tooltipEl.classList.remove('hidden');
       positionTooltip(e);
     });
@@ -1178,6 +1338,7 @@ document.getElementById('collapse-all').addEventListener('click', () => {
 nsSelect.addEventListener('change', () => { populateWorkloads(); render(); });
 wlSelect.addEventListener('change', render);
 groupSelect.addEventListener('change', render);
+document.getElementById('color-mode').addEventListener('change', render);
 podSearch.addEventListener('input', render);
 
 let loading = false;

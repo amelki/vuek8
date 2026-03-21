@@ -22,6 +22,7 @@ type Cache struct {
 	pods           []PodInfo
 	nodes          []NodeInfo
 	namespaces     []string
+	metrics        []PodMetrics
 	ready          bool
 	liveDataLoaded bool
 
@@ -120,6 +121,12 @@ func (c *Cache) GetNamespaces() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.namespaces
+}
+
+func (c *Cache) GetMetrics() []PodMetrics {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.metrics
 }
 
 type Progress struct {
@@ -256,8 +263,12 @@ func (c *Cache) refresh(ctx context.Context, initial bool) {
 	}
 
 	pods := c.client.convertPods(allPodItems)
+	// Fetch metrics (best effort — metrics-server may not be installed)
+	metrics := c.client.FetchAllMetrics(ctx, names)
+
 	c.mu.Lock()
 	c.pods = pods
+	c.metrics = metrics
 	c.ready = true
 	c.liveDataLoaded = true
 	c.mu.Unlock()

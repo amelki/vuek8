@@ -29,11 +29,15 @@ type ContainerInfo struct {
 }
 
 type PodInfo struct {
-	Name         string          `json:"name"`
-	Namespace    string          `json:"namespace"`
-	Status       string          `json:"status"`
-	Ready        string          `json:"ready"`
-	Restarts     int32           `json:"restarts"`
+	Name            string          `json:"name"`
+	Namespace       string          `json:"namespace"`
+	Status          string          `json:"status"`
+	Ready           string          `json:"ready"`
+	Restarts        int32           `json:"restarts"`
+	CPURequestMilli int64           `json:"cpuRequestMilli"`
+	CPULimitMilli   int64           `json:"cpuLimitMilli"`
+	MemRequestBytes int64           `json:"memRequestBytes"`
+	MemLimitBytes   int64           `json:"memLimitBytes"`
 	Age          string          `json:"age"`
 	Node         string          `json:"node"`
 	Containers   []ContainerInfo `json:"containers"`
@@ -90,6 +94,18 @@ func HandleProgress(getCache CacheGetter) http.HandlerFunc {
 			return
 		}
 		json.NewEncoder(w).Encode(c.GetProgress())
+	}
+}
+
+func HandleCachedMetrics(getCache CacheGetter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		c := getCache()
+		if c == nil {
+			json.NewEncoder(w).Encode([]PodMetrics{})
+			return
+		}
+		json.NewEncoder(w).Encode(c.GetMetrics())
 	}
 }
 
@@ -166,17 +182,38 @@ func (c *Client) convertPods(allPodItems []corev1.Pod) []PodInfo {
 
 		wName, wKind := workloadInfo(pod)
 
+		// Sum CPU/memory requests and limits across all containers
+		var cpuReq, cpuLim, memReq, memLim int64
+		for _, c := range pod.Spec.Containers {
+			if v, ok := c.Resources.Requests["cpu"]; ok {
+				cpuReq += v.MilliValue()
+			}
+			if v, ok := c.Resources.Limits["cpu"]; ok {
+				cpuLim += v.MilliValue()
+			}
+			if v, ok := c.Resources.Requests["memory"]; ok {
+				memReq += v.Value()
+			}
+			if v, ok := c.Resources.Limits["memory"]; ok {
+				memLim += v.Value()
+			}
+		}
+
 		pods = append(pods, PodInfo{
-			Name:         pod.Name,
-			Namespace:    pod.Namespace,
-			Status:       podStatus(pod),
-			Ready:        podReady(pod),
-			Restarts:     podRestarts(pod),
-			Age:          formatAge(pod.CreationTimestamp.Time),
-			Node:         pod.Spec.NodeName,
-			Containers:   containers,
-			WorkloadName: wName,
-			WorkloadKind: wKind,
+			Name:            pod.Name,
+			Namespace:       pod.Namespace,
+			Status:          podStatus(pod),
+			Ready:           podReady(pod),
+			Restarts:        podRestarts(pod),
+			CPURequestMilli: cpuReq,
+			CPULimitMilli:   cpuLim,
+			MemRequestBytes: memReq,
+			MemLimitBytes:   memLim,
+			Age:             formatAge(pod.CreationTimestamp.Time),
+			Node:            pod.Spec.NodeName,
+			Containers:      containers,
+			WorkloadName:    wName,
+			WorkloadKind:    wKind,
 		})
 	}
 
