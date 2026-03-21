@@ -318,6 +318,14 @@ header h1 {
   color: #58a6ff;
 }
 
+.app-brand {
+  font-size: 14px;
+  font-weight: 700;
+  color: #4d94ff;
+  letter-spacing: 1px;
+  font-style: italic;
+}
+
 .tab-bar {
   display: flex;
   background: #0d1117;
