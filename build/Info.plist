@@ -7,9 +7,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.vuek8.app</string>
     <key>CFBundleName</key>
-    <string>Vue.K8</string>
+    <string>Vue.k8</string>
     <key>CFBundleDisplayName</key>
-    <string>Vue.K8</string>
+    <string>Vue.k8</string>
     <key>CFBundleVersion</key>
     <string>0.1.0</string>
     <key>CFBundleShortVersionString</key>
