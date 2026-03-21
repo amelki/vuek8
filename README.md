@@ -8,7 +8,7 @@ vuek8 auto-discovers your kubeconfig files, connects to your clusters, and gives
 
 | Platform | Download |
 |----------|----------|
-| **macOS (Apple Silicon)** | [VueK8-0.1.0-macos-arm64.dmg](https://github.com/amelki/vuek8/releases/latest/download/VueK8-0.1.0-macos-arm64.dmg) |
+| **macOS (Apple Silicon)** | [Vue.K8-0.1.0-macos-arm64.dmg](https://github.com/amelki/vuek8/releases/latest/download/Vue.K8-0.1.0-macos-arm64.dmg) |
 | **macOS (Intel)** | [vuek8-macos-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-macos-amd64) |
 | **Linux** | [vuek8-linux-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-linux-amd64) |
 | **Windows** | [vuek8-windows-amd64.exe](https://github.com/amelki/vuek8/releases/latest/download/vuek8-windows-amd64.exe) |
@@ -40,7 +40,7 @@ make dev
 
 # Or build the native macOS app
 make dmg
-open dist/VueK8.app
+open dist/Vue.K8.app
 ```
 
 ### Requirements

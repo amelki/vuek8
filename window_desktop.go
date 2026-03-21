@@ -36,18 +36,18 @@ func runNativeWindow(srv *http.Server, apiURL string) {
 	appMenu := menu.NewMenu()
 
 	// App menu (macOS) — custom with About
-	kglanceMenu := appMenu.AddSubmenu("VueK8")
-	kglanceMenu.AddText("About VueK8", nil, func(_ *menu.CallbackData) {
+	kglanceMenu := appMenu.AddSubmenu("Vue.K8")
+	kglanceMenu.AddText("About Vue.K8", nil, func(_ *menu.CallbackData) {
 		if appCtx != nil {
 			wailsruntime.MessageDialog(appCtx, wailsruntime.MessageDialogOptions{
 				Type:    wailsruntime.InfoDialog,
-				Title:   "About VueK8",
-				Message: "VueK8 v" + update.Version + "\n\nA fast, lightweight Kubernetes dashboard.\nhttps://github.com/amelki/kglance",
+				Title:   "About Vue.K8",
+				Message: "Vue.K8 v" + update.Version + "\n\nA fast, lightweight Kubernetes dashboard.\nhttps://github.com/amelki/kglance",
 			})
 		}
 	})
 	kglanceMenu.AddSeparator()
-	kglanceMenu.AddText("Quit VueK8", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
+	kglanceMenu.AddText("Quit Vue.K8", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 		wailsruntime.Quit(appCtx)
 	})
 
@@ -59,7 +59,7 @@ func runNativeWindow(srv *http.Server, apiURL string) {
 	appMenu.Append(menu.EditMenu())
 
 	err := wails.Run(&options.App{
-		Title:  "VueK8",
+		Title:  "Vue.K8",
 		Width:  1400,
 		Height: 900,
 		Menu:   appMenu,
