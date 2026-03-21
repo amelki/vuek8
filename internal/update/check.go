@@ -10,7 +10,7 @@ import (
 
 var Version = "dev" // set at build time via -ldflags
 
-const repo = "amelki/kglance"
+const repo = "amelki/vuek8"
 
 type ReleaseInfo struct {
 	TagName string `json:"tag_name"`

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"kglance/internal/config"
-	"kglance/internal/kube"
+	"vuek8/internal/config"
+	"vuek8/internal/kube"
 )
 
 type ClusterInfo struct {

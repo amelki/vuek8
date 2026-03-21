@@ -1,4 +1,4 @@
-module kglance
+module vuek8
 
 go 1.26.1
 

@@ -1,7 +1,7 @@
-BINARY=kglance
+BINARY=vuek8
 VERSION?=0.1.0
-APP_NAME=KGlance
-LDFLAGS=-s -w -X kglance/internal/update.Version=$(VERSION)
+APP_NAME=VueK8
+LDFLAGS=-s -w -X vuek8/internal/update.Version=$(VERSION)
 
 .PHONY: dev build app dmg clean
 

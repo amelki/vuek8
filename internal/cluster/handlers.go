@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"kglance/internal/config"
+	"vuek8/internal/config"
 )
 
 func HandleListClusters(mgr *Manager) http.HandlerFunc {

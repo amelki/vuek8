@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"os"
 
-	"kglance/internal/cluster"
-	"kglance/internal/kube"
-	"kglance/internal/update"
+	"vuek8/internal/cluster"
+	"vuek8/internal/kube"
+	"vuek8/internal/update"
 )
 
 //go:embed static

@@ -1,17 +1,17 @@
-# kglance
+# vuek8
 
 A fast, lightweight Kubernetes dashboard. A minimal alternative to Lens.
 
-kglance auto-discovers your kubeconfig files, connects to your clusters, and gives you a real-time view of your nodes and pods — without the bloat.
+vuek8 auto-discovers your kubeconfig files, connects to your clusters, and gives you a real-time view of your nodes and pods — without the bloat.
 
 ## Download
 
 | Platform | Download |
 |----------|----------|
-| **macOS (Apple Silicon)** | [KGlance-0.1.0-macos-arm64.dmg](https://github.com/amelki/kglance/releases/latest/download/KGlance-0.1.0-macos-arm64.dmg) |
-| **macOS (Intel)** | [kglance-macos-amd64](https://github.com/amelki/kglance/releases/latest/download/kglance-macos-amd64) |
-| **Linux** | [kglance-linux-amd64](https://github.com/amelki/kglance/releases/latest/download/kglance-linux-amd64) |
-| **Windows** | [kglance-windows-amd64.exe](https://github.com/amelki/kglance/releases/latest/download/kglance-windows-amd64.exe) |
+| **macOS (Apple Silicon)** | [VueK8-0.1.0-macos-arm64.dmg](https://github.com/amelki/vuek8/releases/latest/download/VueK8-0.1.0-macos-arm64.dmg) |
+| **macOS (Intel)** | [vuek8-macos-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-macos-amd64) |
+| **Linux** | [vuek8-linux-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-linux-amd64) |
+| **Windows** | [vuek8-windows-amd64.exe](https://github.com/amelki/vuek8/releases/latest/download/vuek8-windows-amd64.exe) |
 
 > macOS Apple Silicon: mount the DMG, drag to Applications. All others: run with `--browser` flag.
 
@@ -32,20 +32,20 @@ kglance auto-discovers your kubeconfig files, connects to your clusters, and giv
 
 ```bash
 # Clone
-git clone https://github.com/amelki/kglance.git
-cd kglance
+git clone https://github.com/amelki/vuek8.git
+cd vuek8
 
 # Run in browser (development)
 make dev
 
 # Or build the native macOS app
 make dmg
-open dist/KGlance.app
+open dist/VueK8.app
 ```
 
 ### Requirements
 
-- Go 1.21+ (use `conda create -n kglance go -c conda-forge` if needed)
+- Go 1.21+ (use `conda create -n vuek8 go -c conda-forge` if needed)
 - `~/.kube/config` or any kubeconfig files in `~/.kube/`
 - macOS, Linux, or Windows
 
@@ -53,13 +53,13 @@ open dist/KGlance.app
 
 ```bash
 # Auto-discover kubeconfigs, open in browser
-kglance --browser
+vuek8 --browser
 
 # Use a specific kubeconfig
-kglance --browser --kubeconfig ~/.kube/my-cluster.yaml
+vuek8 --browser --kubeconfig ~/.kube/my-cluster.yaml
 
 # Native desktop app (default when built with make build)
-kglance
+vuek8
 ```
 
 ## Views

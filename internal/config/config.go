@@ -23,7 +23,7 @@ type Config struct {
 
 func configPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "kglance", "config.json")
+	return filepath.Join(home, ".config", "vuek8", "config.json")
 }
 
 func Load() (*Config, error) {

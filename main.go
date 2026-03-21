@@ -8,8 +8,8 @@ import (
 	"os/exec"
 	"runtime"
 
-	"kglance/internal/cluster"
-	"kglance/internal/web"
+	"vuek8/internal/cluster"
+	"vuek8/internal/web"
 )
 
 func main() {
@@ -30,11 +30,11 @@ func main() {
 		log.Fatalf("Failed to listen: %v", err)
 	}
 	apiURL := fmt.Sprintf("http://%s", listener.Addr().String())
-	fmt.Printf("kglance API at %s\n", apiURL)
+	fmt.Printf("vuek8 API at %s\n", apiURL)
 	go srv.Serve(listener)
 
 	if *browserMode {
-		fmt.Printf("kglance running at %s\n", apiURL)
+		fmt.Printf("vuek8 running at %s\n", apiURL)
 		go openBrowser(apiURL)
 		select {} // block forever
 	} else {
