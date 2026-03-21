@@ -12,7 +12,7 @@ import (
 )
 
 //go:embed static
-var staticFiles embed.FS
+var StaticFiles embed.FS
 
 var DevMode bool
 
@@ -49,10 +49,9 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 
 	// Static files — from disk in dev mode, embedded otherwise
 	if DevMode {
-		// Serve from disk — changes are reflected on browser refresh
 		mux.Handle("/", http.FileServer(http.Dir("internal/web/static")))
 	} else {
-		staticFS, _ := fs.Sub(staticFiles, "static")
+		staticFS, _ := fs.Sub(StaticFiles, "static")
 		mux.Handle("/", http.FileServer(http.FS(staticFS)))
 	}
 
@@ -60,7 +59,6 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 }
 
 func init() {
-	// Auto-detect dev mode: if the static dir exists on disk, we're in the source tree
 	if _, err := os.Stat("internal/web/static"); err == nil {
 		DevMode = true
 	}

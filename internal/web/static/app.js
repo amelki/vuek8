@@ -13,6 +13,7 @@ const detailBody = document.getElementById('detail-body');
 const sidebar = document.getElementById('sidebar');
 const clusterListEl = document.getElementById('cluster-list');
 
+let apiBase = ''; // empty = same origin (browser mode), set to http://... in native mode
 let activeTab = 'topology';
 let allNodes = [];
 let allPods = [];
@@ -25,8 +26,12 @@ const expandedPods = new Set();
 const expandedContainers = new Set();
 const MAX_DOTS = 5;
 
-async function fetchJSON(url) {
-  const res = await fetch(url);
+function apiURL(path) {
+  return apiBase + path;
+}
+
+async function fetchJSON(path) {
+  const res = await fetch(apiURL(path));
   if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
   return res.json();
 }
@@ -686,7 +691,7 @@ async function loadLogs(tail) {
 
   const tailLines = tail || 100;
   try {
-    const url = `/api/logs?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}&tail=${tailLines}`;
+    const url = apiURL(`/api/logs?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}&tail=${tailLines}`);
     const res = await fetch(url);
     if (!res.ok) {
       logsEl.textContent = `Error: ${await res.text()}`;
@@ -730,7 +735,7 @@ function startTail() {
   tailBuffer = [];
   tailLines = [];
 
-  const url = `/api/logs/stream?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`;
+  const url = apiURL(`/api/logs/stream?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`);
   tailEventSource = new EventSource(url);
 
   const logsEl = document.getElementById('detail-logs');
@@ -816,7 +821,7 @@ function downloadLogs() {
   if (!currentDetailPod) return;
   const p = currentDetailPod;
   const container = getSelectedContainer();
-  const url = `/api/logs/download?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`;
+  const url = apiURL(`/api/logs/download?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`);
   window.open(url, '_blank');
 }
 
@@ -884,7 +889,7 @@ async function openTerminalLogs() {
   const containerSelect = document.getElementById('log-container-select');
   const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
 
-  const res = await fetch('/api/terminal/logs', {
+  const res = await fetch(apiURL('/api/terminal/logs'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -908,7 +913,7 @@ async function openTerminalExec() {
   const containerSelect = document.getElementById('log-container-select');
   const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
 
-  const res = await fetch('/api/terminal/exec', {
+  const res = await fetch(apiURL('/api/terminal/exec'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -1215,7 +1220,7 @@ async function loadSettings() {
 
 async function saveSetting(key, value) {
   appSettings[key] = value;
-  await fetch('/api/settings/update', {
+  await fetch(apiURL('/api/settings/update'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(appSettings),
@@ -1282,7 +1287,7 @@ async function switchCluster(id) {
     allPods = [];
     render();
 
-    await fetch('/api/clusters/switch', {
+    await fetch(apiURL('/api/clusters/switch'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ id }),
@@ -1361,7 +1366,7 @@ async function confirmRename() {
   const newName = renameInput.value.trim();
   if (!newName || !renameTargetId) return;
   renameModal.classList.add('hidden');
-  await fetch('/api/clusters/rename', {
+  await fetch(apiURL('/api/clusters/rename'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id: renameTargetId, displayName: newName }),
@@ -1377,7 +1382,7 @@ renameModal.addEventListener('click', (e) => { if (e.target === renameModal) ren
 renameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') renameModal.classList.add('hidden'); });
 
 async function toggleHideCluster(id, hidden) {
-  await fetch('/api/clusters/hide', {
+  await fetch(apiURL('/api/clusters/hide'), {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ id, hidden }),
@@ -1474,6 +1479,10 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
 
 // Startup
 (async () => {
+  // In native app, the API URL is injected into the HTML
+  if (window.__KGLANCE_API_BASE__) {
+    apiBase = window.__KGLANCE_API_BASE__;
+  }
   await loadSettings();
   applySidebarState();
   checkForUpdate();

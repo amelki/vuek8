@@ -24,17 +24,21 @@ func main() {
 
 	srv := web.NewServer(mgr)
 
+	// Always start the HTTP server (needed for SSE streaming in native mode)
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		log.Fatalf("Failed to listen: %v", err)
+	}
+	apiURL := fmt.Sprintf("http://%s", listener.Addr().String())
+	fmt.Printf("kglance API at %s\n", apiURL)
+	go srv.Serve(listener)
+
 	if *browserMode {
-		listener, err := net.Listen("tcp", "127.0.0.1:0")
-		if err != nil {
-			log.Fatalf("Failed to listen: %v", err)
-		}
-		url := fmt.Sprintf("http://%s", listener.Addr().String())
-		fmt.Printf("kglance running at %s\n", url)
-		go openBrowser(url)
-		log.Fatal(srv.Serve(listener))
+		fmt.Printf("kglance running at %s\n", apiURL)
+		go openBrowser(apiURL)
+		select {} // block forever
 	} else {
-		runNativeWindow(srv)
+		runNativeWindow(srv, apiURL)
 	}
 }
 
