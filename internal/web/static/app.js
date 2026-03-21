@@ -601,7 +601,9 @@ function splitOnce(s, sep) {
 // --- Detail panel ---
 
 function openDetail(p) {
+  stopTail();
   detailTitle.textContent = p.name;
+  currentDetailPod = p;
 
   let html = '';
 
@@ -632,20 +634,350 @@ function openDetail(p) {
     html += `<div class="detail-section-title">Containers (${p.containers.length})</div>`;
     for (const c of p.containers) {
       html += `<div class="detail-container-card">`;
-      html += `<div class="detail-container-name">${esc(c.name)}</div>`;
+      html += `<div class="detail-container-header">`;
+      html += `<span class="detail-container-name">${esc(c.name)}</span>`;
+      html += `<span class="container-dot ${dotClass(c.status)}" title="${esc(c.status)}"></span>`;
+      html += `</div>`;
       html += `<div class="detail-image-full">${esc(c.image)}:<span class="detail-image-tag">${esc(c.tag)}</span></div>`;
       html += `</div>`;
     }
     html += `</div>`;
   }
 
+  // Logs
+  html += `<div class="detail-section">`;
+  html += `<div class="detail-section-title">Logs</div>`;
+  html += `<div class="detail-logs-controls">`;
+  if (p.containers && p.containers.length > 1) {
+    html += `<select id="log-container-select" class="log-container-select">`;
+    for (const c of p.containers) {
+      html += `<option value="${esc(c.name)}">${esc(c.name)}</option>`;
+    }
+    html += `</select>`;
+  }
+  html += `<button class="btn btn-ghost btn-sm" onclick="loadLogs()">Refresh</button>`;
+  html += `<button class="btn btn-ghost btn-sm" onclick="loadLogs(500)">More</button>`;
+  html += `<button class="btn btn-ghost btn-sm" id="tail-btn" onclick="toggleTail()">Tail</button>`;
+  html += `<button class="btn btn-ghost btn-sm" id="pause-btn" onclick="togglePause()" style="display:none">Pause</button>`;
+  html += `<span style="flex:1"></span>`;
+  html += `<button class="btn btn-ghost btn-sm" onclick="downloadLogs()">Download</button>`;
+  html += `<button class="btn btn-ghost btn-sm logs-expand-btn" id="logs-fullscreen-btn" onclick="toggleLogsFullscreen()" title="Expand logs">&#x26F6;</button>`;
+  html += `</div>`;
+  html += `<pre id="detail-logs" class="detail-logs">Loading...</pre>`;
+  html += `</div>`;
+
   detailBody.innerHTML = html;
   detailPanel.classList.remove('hidden');
+
+  // Load logs
+  loadLogs();
+}
+
+let currentDetailPod = null;
+
+async function loadLogs(tail) {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const logsEl = document.getElementById('detail-logs');
+  if (!logsEl) return;
+
+  const containerSelect = document.getElementById('log-container-select');
+  const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
+
+  const tailLines = tail || 100;
+  try {
+    const url = `/api/logs?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}&tail=${tailLines}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      logsEl.textContent = `Error: ${await res.text()}`;
+      return;
+    }
+    logsEl.textContent = await res.text() || '(no logs)';
+    logsEl.scrollTop = logsEl.scrollHeight;
+  } catch (e) {
+    logsEl.textContent = `Error: ${e.message}`;
+  }
+}
+
+let tailEventSource = null;
+let tailPaused = false;
+let tailBuffer = [];
+
+function getSelectedContainer() {
+  const containerSelect = document.getElementById('log-container-select');
+  const p = currentDetailPod;
+  return containerSelect ? containerSelect.value : (p && p.containers && p.containers.length > 0 ? p.containers[0].name : '');
+}
+
+function toggleTail() {
+  if (tailEventSource) {
+    stopTail();
+  } else {
+    startTail();
+  }
+}
+
+let tailLines = [];
+let tailFlushTimer = null;
+
+function startTail() {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const container = getSelectedContainer();
+
+  stopTail();
+  tailPaused = false;
+  tailBuffer = [];
+  tailLines = [];
+
+  const url = `/api/logs/stream?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`;
+  tailEventSource = new EventSource(url);
+
+  const logsEl = document.getElementById('detail-logs');
+  const tailBtn = document.getElementById('tail-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  if (tailBtn) { tailBtn.textContent = 'Stop'; tailBtn.classList.add('btn-active'); }
+  if (pauseBtn) pauseBtn.style.display = '';
+
+  // Batch incoming lines, flush to DOM every 200ms
+  let pendingLines = [];
+
+  function flushToDOM() {
+    if (!logsEl || pendingLines.length === 0) return;
+    tailLines.push(...pendingLines);
+    // Keep last 2000 lines
+    if (tailLines.length > 2000) {
+      tailLines = tailLines.slice(-2000);
+    }
+    pendingLines = [];
+    logsEl.textContent = tailLines.join('\n');
+    logsEl.scrollTop = logsEl.scrollHeight;
+  }
+
+  tailFlushTimer = setInterval(flushToDOM, 200);
+
+  tailEventSource.addEventListener('message', (e) => {
+    if (tailPaused) {
+      tailBuffer.push(e.data);
+      // Cap buffer to avoid memory issues
+      if (tailBuffer.length > 5000) tailBuffer = tailBuffer.slice(-5000);
+      if (pauseBtn) pauseBtn.textContent = `Resume (${tailBuffer.length})`;
+      return;
+    }
+    pendingLines.push(e.data);
+  });
+
+  tailEventSource.addEventListener('error', () => {
+    flushToDOM();
+    stopTail();
+  });
+}
+
+function stopTail() {
+  if (tailEventSource) {
+    tailEventSource.close();
+    tailEventSource = null;
+  }
+  if (tailFlushTimer) {
+    clearInterval(tailFlushTimer);
+    tailFlushTimer = null;
+  }
+  tailPaused = false;
+  tailBuffer = [];
+  const tailBtn = document.getElementById('tail-btn');
+  const pauseBtn = document.getElementById('pause-btn');
+  if (tailBtn) { tailBtn.textContent = 'Tail'; tailBtn.classList.remove('btn-active'); }
+  if (pauseBtn) { pauseBtn.style.display = 'none'; pauseBtn.textContent = 'Pause'; }
+}
+
+function togglePause() {
+  const logsEl = document.getElementById('detail-logs');
+  const pauseBtn = document.getElementById('pause-btn');
+  if (tailPaused) {
+    // Resume — flush buffer into tailLines
+    tailPaused = false;
+    tailLines.push(...tailBuffer);
+    if (tailLines.length > 2000) {
+      tailLines = tailLines.slice(-2000);
+    }
+    tailBuffer = [];
+    if (logsEl) {
+      logsEl.textContent = tailLines.join('\n');
+      logsEl.scrollTop = logsEl.scrollHeight;
+    }
+    if (pauseBtn) pauseBtn.textContent = 'Pause';
+  } else {
+    tailPaused = true;
+    if (pauseBtn) pauseBtn.textContent = 'Resume (0)';
+  }
+}
+
+function downloadLogs() {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const container = getSelectedContainer();
+  const url = `/api/logs/download?namespace=${encodeURIComponent(p.namespace)}&pod=${encodeURIComponent(p.name)}&container=${encodeURIComponent(container)}`;
+  window.open(url, '_blank');
+}
+
+let podActionsMenu = null;
+
+function showPodActionsMenu(e) {
+  closePodActionsMenu();
+  const btn = e.currentTarget || e.target;
+  const rect = btn.getBoundingClientRect();
+
+  const menu = document.createElement('div');
+  menu.className = 'pod-actions-menu';
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+
+  const items = [
+    { label: 'Open shell in terminal', action: () => openTerminalExec() },
+    { label: 'Copy shell command', action: () => copyTerminalCmd('exec') },
+    { sep: true },
+    { label: 'Tail logs in terminal', action: () => openTerminalLogs() },
+    { label: 'Copy tail command', action: () => copyTerminalCmd('logs') },
+  ];
+
+  for (const item of items) {
+    if (item.sep) {
+      const sep = document.createElement('div');
+      sep.className = 'pod-actions-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const el = document.createElement('div');
+    el.className = 'pod-actions-item';
+    el.textContent = item.label;
+    el.addEventListener('click', () => {
+      closePodActionsMenu();
+      item.action();
+    });
+    menu.appendChild(el);
+  }
+
+  document.body.appendChild(menu);
+  podActionsMenu = menu;
+
+  setTimeout(() => {
+    document.addEventListener('click', closePodActionsMenu, { once: true });
+  }, 0);
+}
+
+function closePodActionsMenu() {
+  if (podActionsMenu) {
+    podActionsMenu.remove();
+    podActionsMenu = null;
+  }
+}
+
+function getActiveClusterInfo() {
+  const active = clusters.find(c => c.active);
+  return active ? { kubeconfigPath: active.filePath, contextName: active.contextName } : {};
+}
+
+async function openTerminalLogs() {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const cluster = getActiveClusterInfo();
+  const containerSelect = document.getElementById('log-container-select');
+  const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
+
+  const res = await fetch('/api/terminal/logs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      namespace: p.namespace,
+      pod: p.name,
+      container,
+      kubeconfigPath: cluster.kubeconfigPath,
+      contextName: cluster.contextName,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    alert(`Could not open terminal. Run manually:\n\n${data.command}`);
+  }
+}
+
+async function openTerminalExec() {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const cluster = getActiveClusterInfo();
+  const containerSelect = document.getElementById('log-container-select');
+  const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
+
+  const res = await fetch('/api/terminal/exec', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      namespace: p.namespace,
+      pod: p.name,
+      container,
+      kubeconfigPath: cluster.kubeconfigPath,
+      contextName: cluster.contextName,
+    }),
+  });
+  const data = await res.json();
+  if (data.error) {
+    alert(`Could not open terminal. Run manually:\n\n${data.command}`);
+  }
+}
+
+async function copyTerminalCmd(action) {
+  if (!currentDetailPod) return;
+  const p = currentDetailPod;
+  const cluster = getActiveClusterInfo();
+  const containerSelect = document.getElementById('log-container-select');
+  const container = containerSelect ? containerSelect.value : (p.containers && p.containers.length > 0 ? p.containers[0].name : '');
+
+  const res = await fetch(`/api/terminal/${action}?dryRun=true`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      namespace: p.namespace,
+      pod: p.name,
+      container,
+      kubeconfigPath: cluster.kubeconfigPath,
+      contextName: cluster.contextName,
+    }),
+  });
+  const data = await res.json();
+  if (data.command) {
+    await navigator.clipboard.writeText(data.command);
+    // Brief visual feedback
+    const btn = event.target;
+    const orig = btn.innerHTML;
+    btn.innerHTML = '&#10003;';
+    setTimeout(() => { btn.innerHTML = orig; }, 1000);
+  }
 }
 
 function closeDetail() {
+  stopTail();
   detailPanel.classList.add('hidden');
+  detailPanel.classList.remove('logs-fullscreen');
+  currentDetailPod = null;
 }
+
+function toggleLogsFullscreen() {
+  detailPanel.classList.toggle('logs-fullscreen');
+  const btn = document.getElementById('logs-fullscreen-btn');
+  if (detailPanel.classList.contains('logs-fullscreen')) {
+    btn.innerHTML = '&#x2716;';
+    btn.title = 'Collapse logs';
+  } else {
+    btn.innerHTML = '&#x26F6;';
+    btn.title = 'Expand logs';
+  }
+}
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && detailPanel.classList.contains('logs-fullscreen')) {
+    toggleLogsFullscreen();
+  }
+});
 
 function detailField(label, value) {
   return `<div class="detail-field"><span class="detail-field-label">${esc(label)}</span><span class="detail-field-value" title="${esc(String(value))}">${esc(String(value))}</span></div>`;
@@ -714,6 +1046,7 @@ function renderTopology() {
 
     for (const n of nodes) {
       const pods = podsByNode.get(n.name) || [];
+      if (filter && pods.length === 0) continue;
       html += `<div class="topo-machine ${n.status !== 'Ready' ? 'not-ready' : ''}">`;
       html += `<div class="topo-machine-header">`;
       html += `<span class="topo-machine-name">${esc(n.name)}</span>`;
@@ -825,6 +1158,10 @@ document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => switchTab(t.dataset.tab));
 });
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('detail-actions-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  showPodActionsMenu(e);
+});
 document.getElementById('expand-all').addEventListener('click', () => {
   for (const key of expanded.keys()) expanded.set(key, true);
   renderTree();

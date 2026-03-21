@@ -35,6 +35,15 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	mux.HandleFunc("/api/settings", cluster.HandleGetSettings(mgr))
 	mux.HandleFunc("/api/settings/update", cluster.HandleUpdateSettings(mgr))
 
+	// Logs
+	mux.HandleFunc("/api/logs", kube.HandleLogs(getCache))
+	mux.HandleFunc("/api/logs/stream", kube.HandleLogsStream(getCache))
+	mux.HandleFunc("/api/logs/download", kube.HandleLogsDownload(getCache))
+
+	// Terminal
+	mux.HandleFunc("/api/terminal/logs", kube.HandleOpenTerminal("logs"))
+	mux.HandleFunc("/api/terminal/exec", kube.HandleOpenTerminal("exec"))
+
 	// Version / update check
 	mux.HandleFunc("/api/version", update.HandleVersion)
 

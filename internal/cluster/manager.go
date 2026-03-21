@@ -112,6 +112,17 @@ func (m *Manager) ListClusters() []ClusterInfo {
 	return infos
 }
 
+func (m *Manager) ActiveClusterInfo() (kubeconfigPath, contextName string) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	for _, d := range m.discovered {
+		if d.ID == m.activeID {
+			return d.KubeconfigPath, d.ContextName
+		}
+	}
+	return "", ""
+}
+
 func (m *Manager) ActiveID() string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
