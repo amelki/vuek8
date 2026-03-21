@@ -11,8 +11,14 @@ type ClusterPrefs struct {
 	Hidden      bool   `json:"hidden,omitempty"`
 }
 
+type Settings struct {
+	ShowAllContexts  bool `json:"showAllContexts,omitempty"`
+	SidebarCollapsed bool `json:"sidebarCollapsed,omitempty"`
+}
+
 type Config struct {
 	Clusters map[string]ClusterPrefs `json:"clusters"`
+	Settings Settings                `json:"settings"`
 }
 
 func configPath() string {
@@ -65,4 +71,12 @@ func (c *Config) SetHidden(id string, hidden bool) {
 	prefs := c.Clusters[id]
 	prefs.Hidden = hidden
 	c.Clusters[id] = prefs
+}
+
+func (c *Config) GetSettings() Settings {
+	return c.Settings
+}
+
+func (c *Config) UpdateSettings(s Settings) {
+	c.Settings = s
 }

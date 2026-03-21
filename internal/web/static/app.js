@@ -83,6 +83,18 @@ function hideProgress() {
   progressBar.classList.add('hidden');
 }
 
+const errorBanner = document.getElementById('error-banner');
+const errorBannerText = document.getElementById('error-banner-text');
+
+function showErrorBanner(msg) {
+  errorBannerText.textContent = msg;
+  errorBanner.classList.remove('hidden');
+}
+
+function hideErrorBanner() {
+  errorBanner.classList.add('hidden');
+}
+
 // Wait for cache to be ready, showing progress
 async function waitForCache() {
   showProgress(5, 'Connecting to cluster...');
@@ -90,15 +102,18 @@ async function waitForCache() {
     try {
       const p = await fetchJSON('/api/progress');
       if (p.ready) {
-        showProgress(100, 'Ready');
         hideProgress();
+        if (p.error) {
+          showErrorBanner(p.error);
+        } else {
+          hideErrorBanner();
+        }
         return;
       }
       if (p.total > 0) {
         const pct = Math.max(5, Math.round((p.current / p.total) * 100));
         showProgress(pct, `Fetching ${p.namespace}... (${p.current}/${p.total})`);
       } else {
-        // No progress info yet — show indeterminate
         showProgress(30, 'Loading cluster data...');
       }
     } catch (e) {
@@ -399,26 +414,27 @@ function isExpanded(key) {
 
 // Column definitions: name, default width
 const columns = [
-  { name: 'Namespace', width: 120 },
-  { name: 'Name', width: 300 },
-  { name: 'Containers', width: 70 },
-  { name: 'Status', width: 110 },
-  { name: 'Ready', width: 50 },
-  { name: 'Restarts', width: 70 },
-  { name: 'Age', width: 50 },
-  { name: 'Tag', width: 100 },
+  { name: 'Namespace', width: 120, flex: false },
+  { name: 'Name', width: 0, flex: true },
+  { name: 'Containers', width: 70, flex: false, align: 'right' },
+  { name: 'Status', width: 110, flex: false, align: 'right' },
+  { name: 'Ready', width: 50, flex: false, align: 'right' },
+  { name: 'Restarts', width: 70, flex: false, align: 'right' },
+  { name: 'Age', width: 50, flex: false, align: 'right' },
+  { name: 'Tag', width: 100, flex: false, align: 'right' },
 ];
 
 function gridTemplateFromColumns() {
-  return columns.map(c => c.width + 'px').join(' ');
+  return columns.map(c => c.flex ? '1fr' : c.width + 'px').join(' ');
 }
 
 function podTableHeader() {
   const tpl = gridTemplateFromColumns();
   let h = `<div class="pod-table-header" style="grid-template-columns: ${tpl}">`;
   columns.forEach((col, i) => {
-    h += `<span class="col-header" data-col="${i}">${esc(col.name)}`;
-    if (i < columns.length - 1) {
+    const align = col.align === 'right' ? ' style="text-align:right"' : '';
+    h += `<span class="col-header" data-col="${i}"${align}>${esc(col.name)}`;
+    if (!col.flex && i < columns.length - 1) {
       h += `<span class="col-resize" data-col="${i}"></span>`;
     }
     h += `</span>`;
@@ -473,7 +489,7 @@ function podRow(p, flat) {
   r += `<span class="pod-ns">${esc(p.namespace)}</span>`;
   r += `<span class="pod-name">${esc(p.name)}</span>`;
 
-  r += `<span class="pod-info-containers">`;
+  r += `<span class="pod-info-containers pod-col-right">`;
   if (p.containers) {
     for (const c of p.containers) {
       r += `<span class="container-dot ${dotClass(c.status)}" title="${esc(c.name)}: ${esc(c.status)}"></span>`;
@@ -481,12 +497,12 @@ function podRow(p, flat) {
   }
   r += `</span>`;
 
-  r += `<span class="pod-col"><span class="${statusClass(p.status)}">${esc(p.status)}</span></span>`;
+  r += `<span class="pod-col pod-col-right"><span class="${statusClass(p.status)}">${esc(p.status)}</span></span>`;
   r += `<span class="pod-col pod-col-right">${esc(p.ready)}</span>`;
   r += `<span class="pod-col pod-col-right ${restartsClass(p.restarts)}">${p.restarts === 0 ? '' : p.restarts}</span>`;
   r += `<span class="pod-col pod-col-right">${esc(p.age)}</span>`;
   const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
-  r += `<span class="pod-col pod-info-tag" title="${esc(tag)}">${esc(tag)}</span>`;
+  r += `<span class="pod-col pod-col-right pod-info-tag" title="${esc(tag)}">${esc(tag)}</span>`;
   r += `</div>`;
 
   if (isOpen && p.containers) {
@@ -778,34 +794,46 @@ async function loadClusters() {
   renderSidebar();
 }
 
-function getSetting(key, defaultValue) {
-  const v = localStorage.getItem('kglance-' + key);
-  if (v === null) return defaultValue;
-  return v === 'true';
+let appSettings = {};
+
+async function loadSettings() {
+  try {
+    appSettings = await fetchJSON('/api/settings');
+  } catch (e) {
+    appSettings = {};
+  }
 }
 
-function setSetting(key, value) {
-  localStorage.setItem('kglance-' + key, value);
+async function saveSetting(key, value) {
+  appSettings[key] = value;
+  await fetch('/api/settings/update', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(appSettings),
+  });
 }
 
 function renderSidebar() {
   const showHidden = showHiddenCheckbox.checked;
-  const showAllContexts = getSetting('all-contexts', false);
+  const showAllContexts = appSettings.showAllContexts || false;
   let visible = clusters;
-  if (!showAllContexts) visible = visible.filter(c => c.isDefault);
-  if (!showHidden) visible = visible.filter(c => !c.hidden);
+  if (!showAllContexts) visible = visible.filter(c => c.isDefault || c.active);
+  if (!showHidden) visible = visible.filter(c => !c.hidden || c.active);
 
   let html = '';
   for (const c of visible) {
-    const cls = (c.active ? ' active' : '') + (c.hidden ? ' hidden-cluster' : '');
+    const cls = (c.active ? ' active' : '') + (c.hidden ? ' hidden-cluster' : '') + (c.error ? ' error-cluster' : '');
     const fileName = c.filePath.split('/').pop();
     html += `<div class="cluster-item${cls}" data-cluster-id="${esc(c.id)}">`;
     html += `<div class="cluster-item-row">`;
     html += `<span class="cluster-name">${esc(c.displayName)}</span>`;
     html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8230;</span>`;
     html += `</div>`;
-    html += `<span class="cluster-server">${esc(c.server)}</span>`;
     html += `<span class="cluster-file">${esc(fileName)}</span>`;
+    html += `<span class="cluster-server">${esc(c.server)}</span>`;
+    if (c.error) {
+      html += `<span class="cluster-error" title="${esc(c.error)}">unreachable</span>`;
+    }
     html += `</div>`;
   }
   clusterListEl.innerHTML = html;
@@ -829,6 +857,8 @@ function renderSidebar() {
 
 async function switchCluster(id) {
   try {
+    hideProgress();
+    hideErrorBanner();
     showProgress(0, 'Switching cluster...');
     allNodes = [];
     allPods = [];
@@ -842,11 +872,13 @@ async function switchCluster(id) {
 
     await loadClusters();
     await waitForCache();
+    await loadClusters(); // reload to pick up error state
     await loadNamespaces();
     await refresh();
   } catch (e) {
     console.error('switch failed:', e);
     hideProgress();
+    await loadClusters();
   }
 }
 
@@ -896,16 +928,35 @@ function closeClusterMenu() {
   }
 }
 
-async function renameCluster(id, currentName) {
-  const newName = prompt('Display name:', currentName);
-  if (newName === null || newName === currentName) return;
+const renameModal = document.getElementById('rename-modal');
+const renameInput = document.getElementById('rename-input');
+let renameTargetId = null;
+
+function renameCluster(id, currentName) {
+  renameTargetId = id;
+  renameInput.value = currentName;
+  renameModal.classList.remove('hidden');
+  setTimeout(() => { renameInput.focus(); renameInput.select(); }, 50);
+}
+
+async function confirmRename() {
+  const newName = renameInput.value.trim();
+  if (!newName || !renameTargetId) return;
+  renameModal.classList.add('hidden');
   await fetch('/api/clusters/rename', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ id, displayName: newName }),
+    body: JSON.stringify({ id: renameTargetId, displayName: newName }),
   });
+  renameTargetId = null;
   await loadClusters();
 }
+
+document.getElementById('rename-confirm').addEventListener('click', confirmRename);
+document.getElementById('rename-cancel').addEventListener('click', () => renameModal.classList.add('hidden'));
+document.getElementById('rename-close').addEventListener('click', () => renameModal.classList.add('hidden'));
+renameModal.addEventListener('click', (e) => { if (e.target === renameModal) renameModal.classList.add('hidden'); });
+renameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') renameModal.classList.add('hidden'); });
 
 async function toggleHideCluster(id, hidden) {
   await fetch('/api/clusters/hide', {
@@ -917,12 +968,14 @@ async function toggleHideCluster(id, hidden) {
 }
 
 // Sidebar toggle
-const sidebarCollapsed = localStorage.getItem('kglance-sidebar-collapsed') === 'true';
-if (sidebarCollapsed) sidebar.classList.add('collapsed');
+function applySidebarState() {
+  if (appSettings.sidebarCollapsed) sidebar.classList.add('collapsed');
+  else sidebar.classList.remove('collapsed');
+}
 
 document.getElementById('sidebar-toggle').addEventListener('click', () => {
   sidebar.classList.toggle('collapsed');
-  localStorage.setItem('kglance-sidebar-collapsed', sidebar.classList.contains('collapsed'));
+  saveSetting('sidebarCollapsed', sidebar.classList.contains('collapsed'));
 });
 
 showHiddenCheckbox.addEventListener('change', renderSidebar);
@@ -931,9 +984,8 @@ showHiddenCheckbox.addEventListener('change', renderSidebar);
 const settingsModal = document.getElementById('settings-modal');
 const allContextsCheckbox = document.getElementById('setting-all-contexts');
 
-allContextsCheckbox.checked = getSetting('all-contexts', false);
-
 document.getElementById('settings-btn').addEventListener('click', () => {
+  allContextsCheckbox.checked = appSettings.showAllContexts || false;
   settingsModal.classList.remove('hidden');
 });
 
@@ -946,7 +998,7 @@ settingsModal.addEventListener('click', (e) => {
 });
 
 allContextsCheckbox.addEventListener('change', () => {
-  setSetting('all-contexts', allContextsCheckbox.checked);
+  saveSetting('showAllContexts', allContextsCheckbox.checked);
   renderSidebar();
 });
 
@@ -971,6 +1023,8 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
 
 // Startup
 (async () => {
+  await loadSettings();
+  applySidebarState();
   checkForUpdate();
   await loadClusters();
   await waitForCache();
@@ -978,4 +1032,5 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
   await refresh();
   setInterval(refresh, 3000);
   setInterval(loadNamespaces, 15000);
+  setInterval(loadClusters, 5000);
 })();

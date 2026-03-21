@@ -2,6 +2,7 @@ package kube
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -24,6 +25,7 @@ type Cache struct {
 	current    int
 	total      int
 	currentNS  string
+	lastError  string
 }
 
 func NewCache(client *Client) *Cache {
@@ -59,6 +61,7 @@ type Progress struct {
 	Total     int    `json:"total"`
 	Namespace string `json:"namespace"`
 	Ready     bool   `json:"ready"`
+	Error     string `json:"error,omitempty"`
 }
 
 func (c *Cache) GetProgress() Progress {
@@ -69,7 +72,14 @@ func (c *Cache) GetProgress() Progress {
 		Total:     c.total,
 		Namespace: c.currentNS,
 		Ready:     c.IsReady(),
+		Error:     c.lastError,
 	}
+}
+
+func (c *Cache) setError(err string) {
+	c.progressMu.Lock()
+	c.lastError = err
+	c.progressMu.Unlock()
 }
 
 func (c *Cache) setProgress(current, total int, ns string) {
@@ -101,13 +111,24 @@ func (c *Cache) Start(ctx context.Context) {
 }
 
 func (c *Cache) refresh(ctx context.Context, initial bool) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	timeout := 60 * time.Second
+	if initial {
+		timeout = 15 * time.Second
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
 	// Fetch nodes
 	nodeList, err := c.client.Clientset.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("cache: failed to list nodes: %v", err)
+		if initial {
+			c.setError(fmt.Sprintf("Cannot reach cluster: %v", err))
+			c.mu.Lock()
+			c.ready = true // mark ready so frontend stops waiting
+			c.mu.Unlock()
+			return
+		}
 	} else {
 		nodes := c.client.buildNodes(nodeList)
 		c.mu.Lock()
@@ -119,6 +140,12 @@ func (c *Cache) refresh(ctx context.Context, initial bool) {
 	nsList, err := c.client.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
 	if err != nil {
 		log.Printf("cache: failed to list namespaces: %v", err)
+		if initial {
+			c.setError(fmt.Sprintf("Cannot list namespaces: %v", err))
+			c.mu.Lock()
+			c.ready = true
+			c.mu.Unlock()
+		}
 		return
 	}
 
@@ -162,4 +189,6 @@ func (c *Cache) refresh(ctx context.Context, initial bool) {
 	c.pods = pods
 	c.ready = true
 	c.mu.Unlock()
+	// Clear error only on success
+	c.setError("")
 }

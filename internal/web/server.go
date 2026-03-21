@@ -29,6 +29,8 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	mux.HandleFunc("/api/clusters/switch", cluster.HandleSwitchCluster(mgr))
 	mux.HandleFunc("/api/clusters/rename", cluster.HandleRenameCluster(mgr))
 	mux.HandleFunc("/api/clusters/hide", cluster.HandleHideCluster(mgr))
+	mux.HandleFunc("/api/settings", cluster.HandleGetSettings(mgr))
+	mux.HandleFunc("/api/settings/update", cluster.HandleUpdateSettings(mgr))
 
 	// Version / update check
 	mux.HandleFunc("/api/version", update.HandleVersion)

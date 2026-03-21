@@ -18,6 +18,7 @@ type ClusterInfo struct {
 	Hidden      bool   `json:"hidden"`
 	Active      bool   `json:"active"`
 	IsDefault   bool   `json:"isDefault"`
+	Error       string `json:"error,omitempty"`
 }
 
 type Manager struct {
@@ -41,21 +42,26 @@ func NewManager(initialKubeconfig string) (*Manager, error) {
 	// Pick initial cluster
 	initialID := ""
 	if initialKubeconfig != "" {
-		// Find matching discovered cluster
+		// Find the default context from this kubeconfig file
 		for _, d := range discovered {
-			if d.KubeconfigPath == initialKubeconfig {
+			if d.KubeconfigPath == initialKubeconfig && d.IsDefault {
 				initialID = d.ID
 				break
 			}
 		}
-		// If not found in discovery, add it manually
-		if initialID == "" && len(discovered) > 0 {
-			initialID = discovered[0].ID
+		// Fallback: any context from this file
+		if initialID == "" {
+			for _, d := range discovered {
+				if d.KubeconfigPath == initialKubeconfig {
+					initialID = d.ID
+					break
+				}
+			}
 		}
 	} else if len(discovered) > 0 {
-		// Pick first non-hidden cluster
+		// Pick first non-hidden default context
 		for _, d := range discovered {
-			if !cfg.GetPrefs(d.ID).Hidden {
+			if d.IsDefault && !cfg.GetPrefs(d.ID).Hidden {
 				initialID = d.ID
 				break
 			}
@@ -86,6 +92,11 @@ func (m *Manager) ListClusters() []ClusterInfo {
 		if displayName == "" {
 			displayName = d.ContextName
 		}
+		errMsg := ""
+		if d.ID == m.activeID && m.activeCache != nil {
+			p := m.activeCache.GetProgress()
+			errMsg = p.Error
+		}
 		infos = append(infos, ClusterInfo{
 			ID:          d.ID,
 			DisplayName: displayName,
@@ -95,6 +106,7 @@ func (m *Manager) ListClusters() []ClusterInfo {
 			Hidden:      prefs.Hidden,
 			Active:      d.ID == m.activeID,
 			IsDefault:   d.IsDefault,
+			Error:       errMsg,
 		})
 	}
 	return infos
@@ -161,5 +173,18 @@ func (m *Manager) SetHidden(id string, hidden bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cfg.SetHidden(id, hidden)
+	return m.cfg.Save()
+}
+
+func (m *Manager) GetSettings() config.Settings {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg.GetSettings()
+}
+
+func (m *Manager) UpdateSettings(s config.Settings) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.UpdateSettings(s)
 	return m.cfg.Save()
 }
