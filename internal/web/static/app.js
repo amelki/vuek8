@@ -81,6 +81,44 @@ function showProgress(pct, text) {
 
 function hideProgress() {
   progressBar.classList.add('hidden');
+  hideSkeleton();
+}
+
+function showSkeleton() {
+  if (activeTab !== 'topology') return;
+  // Generate fake topology cards
+  const pools = [
+    { name: '', nodes: 4, dotsPerNode: 6 },
+    { name: '', nodes: 3, dotsPerNode: 0 },
+    { name: '', nodes: 5, dotsPerNode: [45, 30, 35, 25, 40] },
+    { name: '', nodes: 4, dotsPerNode: [20, 15, 25, 18] },
+  ];
+  let html = '';
+  for (const pool of pools) {
+    html += `<div class="topo-pool skeleton-pool">`;
+    html += `<div class="topo-pool-header"><span class="skeleton-text skeleton-w120"></span> <span class="skeleton-text skeleton-w80"></span></div>`;
+    html += `<div class="topo-machines">`;
+    for (let i = 0; i < pool.nodes; i++) {
+      const dotCount = Array.isArray(pool.dotsPerNode) ? pool.dotsPerNode[i] : pool.dotsPerNode;
+      html += `<div class="topo-machine skeleton-card">`;
+      html += `<div class="topo-machine-header"><span class="skeleton-text skeleton-w100"></span><span class="skeleton-text skeleton-w30"></span></div>`;
+      html += `<div class="topo-machine-resources"><span class="skeleton-text skeleton-w80"></span></div>`;
+      if (dotCount > 0) {
+        html += `<div class="topo-pods">`;
+        for (let d = 0; d < dotCount; d++) {
+          html += `<div class="topo-dot skeleton-dot"></div>`;
+        }
+        html += `</div>`;
+      }
+      html += `</div>`;
+    }
+    html += `</div></div>`;
+  }
+  topoEl.innerHTML = html;
+}
+
+function hideSkeleton() {
+  // skeleton gets replaced by real content on next render
 }
 
 const errorBanner = document.getElementById('error-banner');
@@ -98,23 +136,44 @@ function hideErrorBanner() {
 // Wait for cache to be ready, showing progress
 async function waitForCache() {
   showProgress(5, 'Connecting to cluster...');
+  let shownCachedData = false;
+  let fakeProgress = 5;
+  showSkeleton();
   while (true) {
     try {
       const p = await fetchJSON('/api/progress');
-      if (p.ready) {
+
+      // If ready (even from disk cache), load and show data immediately
+      if (p.ready && !shownCachedData) {
+        shownCachedData = true;
+        // Load cached data right away
+        await loadDataQuiet();
+      }
+
+      if (p.error) {
         hideProgress();
-        if (p.error) {
-          showErrorBanner(p.error);
-        } else {
-          hideErrorBanner();
-        }
+        showErrorBanner(p.error);
         return;
       }
+
+      // If live data is loaded (not just disk cache), we're done
+      if (p.ready && !p.loading) {
+        hideProgress();
+        hideErrorBanner();
+        return;
+      }
+
+      // Still loading live data — show progress
+      // Fake progress that slowly approaches 90% but never reaches it
+      fakeProgress += (90 - fakeProgress) * 0.08;
       if (p.total > 0) {
-        const pct = Math.max(5, Math.round((p.current / p.total) * 100));
-        showProgress(pct, `Fetching ${p.namespace}... (${p.current}/${p.total})`);
+        const realPct = Math.round((p.current / p.total) * 100);
+        const pct = Math.max(fakeProgress, realPct);
+        showProgress(pct, `Refreshing... (${p.current}/${p.total})`);
+      } else if (shownCachedData) {
+        showProgress(fakeProgress, 'Refreshing live data...');
       } else {
-        showProgress(30, 'Loading cluster data...');
+        showProgress(fakeProgress, 'Loading cluster data...');
       }
     } catch (e) {
       // server not ready yet
@@ -124,16 +183,19 @@ async function waitForCache() {
 }
 
 // All API calls are instant (served from server-side cache)
-async function loadData() {
+async function loadDataQuiet() {
   const [nodesResult, podsResult] = await Promise.allSettled([
     fetchJSON('/api/nodes'),
     fetchJSON('/api/pods'),
   ]);
   if (nodesResult.status === 'fulfilled') allNodes = nodesResult.value;
   if (podsResult.status === 'fulfilled') allPods = podsResult.value;
-
   populateWorkloads();
   render();
+}
+
+async function loadData() {
+  await loadDataQuiet();
 }
 
 // --- Grouping helpers ---
@@ -413,19 +475,23 @@ function isExpanded(key) {
 }
 
 // Column definitions: name, default width
+// Default widths:
+// Containers: 9.5 squares = 9.5 * (8px dot + 2px gap) = 95px
+// Status: ~"ContainerCreating" = ~120px
+// Ready, Restarts, Age, Tag: ~10 chars monospace = 85px each
 const columns = [
-  { name: 'Namespace', width: 120, flex: false },
-  { name: 'Name', width: 0, flex: true },
-  { name: 'Containers', width: 70, flex: false, align: 'right' },
-  { name: 'Status', width: 110, flex: false, align: 'right' },
-  { name: 'Ready', width: 50, flex: false, align: 'right' },
-  { name: 'Restarts', width: 70, flex: false, align: 'right' },
-  { name: 'Age', width: 50, flex: false, align: 'right' },
-  { name: 'Tag', width: 100, flex: false, align: 'right' },
+  { name: 'Namespace', min: 120 },
+  { name: 'Name', min: 100, flex: true },
+  { name: 'Containers', min: 105, align: 'right' },
+  { name: 'Status', min: 120, align: 'right' },
+  { name: 'Ready', min: 85, align: 'right' },
+  { name: 'Restarts', min: 95, align: 'right' },
+  { name: 'Age', min: 85, align: 'right' },
+  { name: 'Tag', min: 85, align: 'right' },
 ];
 
 function gridTemplateFromColumns() {
-  return columns.map(c => c.flex ? '1fr' : c.width + 'px').join(' ');
+  return columns.map(c => c.flex ? '1fr' : (c.width || c.min) + 'px').join(' ');
 }
 
 function podTableHeader() {
@@ -434,9 +500,7 @@ function podTableHeader() {
   columns.forEach((col, i) => {
     const align = col.align === 'right' ? ' style="text-align:right"' : '';
     h += `<span class="col-header" data-col="${i}"${align}>${esc(col.name)}`;
-    if (!col.flex && i < columns.length - 1) {
-      h += `<span class="col-resize" data-col="${i}"></span>`;
-    }
+    h += `<span class="col-resize" data-col="${i}"></span>`;
     h += `</span>`;
   });
   h += `</div>`;
@@ -458,7 +522,16 @@ function initColumnResize() {
       e.stopPropagation();
       const colIdx = parseInt(handle.dataset.col);
       const startX = e.clientX;
-      const startWidth = columns[colIdx].width;
+      const header = handle.closest('.pod-table-header');
+      const cell = header.children[colIdx];
+
+      // Snapshot the actual rendered width
+      const startWidth = cell.offsetWidth;
+
+      // If it was flex, lock it to a fixed width from now on
+      if (columns[colIdx].flex) {
+        columns[colIdx].flex = false;
+      }
 
       handle.classList.add('active');
 

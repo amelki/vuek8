@@ -408,10 +408,11 @@ button:hover {
 }
 
 .progress-bar {
-  padding: 12px 20px;
+  flex: 1;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
+  padding: 0 16px;
 }
 
 .progress-bar.hidden {
@@ -420,16 +421,16 @@ button:hover {
 
 .progress-track {
   flex: 1;
-  height: 4px;
+  height: 6px;
   background: #21262d;
-  border-radius: 2px;
+  border-radius: 3px;
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
   background: #58a6ff;
-  border-radius: 2px;
+  border-radius: 3px;
   width: 0%;
   transition: width 0.2s ease;
   position: relative;
@@ -651,6 +652,8 @@ main {
 
 .pod-col-right {
   text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Container dots */
@@ -658,7 +661,7 @@ main {
   display: flex;
   gap: 2px;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   overflow: hidden;
   justify-content: flex-end;
 }
@@ -783,6 +786,39 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: help;
+}
+
+/* ---- Skeleton loading ---- */
+
+@keyframes skeleton-pulse {
+  0%, 100% { opacity: 0.15; }
+  50% { opacity: 0.3; }
+}
+
+.skeleton-card {
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+}
+
+.skeleton-text {
+  display: inline-block;
+  height: 10px;
+  border-radius: 4px;
+  background: #8b949e;
+  opacity: 0.2;
+}
+
+.skeleton-w30 { width: 30px; }
+.skeleton-w80 { width: 80px; }
+.skeleton-w100 { width: 100px; }
+.skeleton-w120 { width: 120px; }
+
+.skeleton-dot {
+  background: #8b949e !important;
+  opacity: 0.15;
+}
+
+.skeleton-pool .topo-pool-header {
+  border-bottom-color: #21262d;
 }
 
 /* ---- Error banner ---- */

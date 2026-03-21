@@ -152,7 +152,7 @@ func (m *Manager) SwitchTo(id string) error {
 
 	// Start new cache
 	ctx, cancel := context.WithCancel(context.Background())
-	cache := kube.NewCache(client)
+	cache := kube.NewCache(client, id)
 	m.activeCache = cache
 	m.activeID = id
 	m.cancelFn = cancel

@@ -2,8 +2,11 @@ package kube
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,13 +15,15 @@ import (
 )
 
 type Cache struct {
-	client *Client
+	client    *Client
+	clusterID string
 
-	mu          sync.RWMutex
-	pods        []PodInfo
-	nodes       []NodeInfo
-	namespaces  []string
-	ready       bool
+	mu             sync.RWMutex
+	pods           []PodInfo
+	nodes          []NodeInfo
+	namespaces     []string
+	ready          bool
+	liveDataLoaded bool
 
 	// Progress tracking for initial load
 	progressMu sync.RWMutex
@@ -28,8 +33,69 @@ type Cache struct {
 	lastError  string
 }
 
-func NewCache(client *Client) *Cache {
-	return &Cache{client: client}
+type diskSnapshot struct {
+	Pods       []PodInfo  `json:"pods"`
+	Nodes      []NodeInfo `json:"nodes"`
+	Namespaces []string   `json:"namespaces"`
+}
+
+func diskCachePath(clusterID string) string {
+	home, _ := os.UserHomeDir()
+	// Use a hash-safe filename
+	safe := ""
+	for _, c := range clusterID {
+		if (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' {
+			safe += string(c)
+		} else {
+			safe += "_"
+		}
+	}
+	return filepath.Join(home, ".config", "kglance", "cache", safe+".json")
+}
+
+func NewCache(client *Client, clusterID string) *Cache {
+	c := &Cache{client: client, clusterID: clusterID}
+	// Try loading disk cache for instant display
+	c.loadFromDisk()
+	return c
+}
+
+func (c *Cache) loadFromDisk() {
+	path := diskCachePath(c.clusterID)
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return
+	}
+	var snap diskSnapshot
+	if err := json.Unmarshal(data, &snap); err != nil {
+		return
+	}
+	c.mu.Lock()
+	c.pods = snap.Pods
+	c.nodes = snap.Nodes
+	c.namespaces = snap.Namespaces
+	c.ready = true // show cached data immediately
+	c.mu.Unlock()
+	log.Printf("cache: loaded %d pods from disk cache for %s", len(snap.Pods), c.clusterID)
+}
+
+func (c *Cache) saveToDisk() {
+	snap := diskSnapshot{
+		Pods:       c.pods,
+		Nodes:      c.nodes,
+		Namespaces: c.namespaces,
+	}
+	data, err := json.Marshal(snap)
+	if err != nil {
+		return
+	}
+	path := diskCachePath(c.clusterID)
+	os.MkdirAll(filepath.Dir(path), 0755)
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, data, 0644); err != nil {
+		return
+	}
+	os.Rename(tmp, path)
 }
 
 func (c *Cache) IsReady() bool {
@@ -61,17 +127,22 @@ type Progress struct {
 	Total     int    `json:"total"`
 	Namespace string `json:"namespace"`
 	Ready     bool   `json:"ready"`
+	Loading   bool   `json:"loading"`
 	Error     string `json:"error,omitempty"`
 }
 
 func (c *Cache) GetProgress() Progress {
 	c.progressMu.RLock()
 	defer c.progressMu.RUnlock()
+	c.mu.RLock()
+	loading := !c.liveDataLoaded
+	c.mu.RUnlock()
 	return Progress{
 		Current:   c.current,
 		Total:     c.total,
 		Namespace: c.currentNS,
 		Ready:     c.IsReady(),
+		Loading:   loading,
 		Error:     c.lastError,
 	}
 }
@@ -188,7 +259,10 @@ func (c *Cache) refresh(ctx context.Context, initial bool) {
 	c.mu.Lock()
 	c.pods = pods
 	c.ready = true
+	c.liveDataLoaded = true
 	c.mu.Unlock()
 	// Clear error only on success
 	c.setError("")
+	// Save to disk for instant loading next time
+	c.saveToDisk()
 }
