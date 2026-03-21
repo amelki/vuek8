@@ -22,6 +22,7 @@ app: build
 	mkdir -p dist/$(APP_NAME).app/Contents/Resources
 	cp $(BINARY) dist/$(APP_NAME).app/Contents/MacOS/$(BINARY)
 	cp build/Info.plist dist/$(APP_NAME).app/Contents/
+	cp build/icon.icns dist/$(APP_NAME).app/Contents/Resources/icon.icns
 
 # macOS .dmg installer
 dmg: app

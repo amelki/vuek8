@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1c2128"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+
+  <!-- 4x4 pod dot grid + partial row, centered, bigger dots -->
+  <!-- Row 1 -->
+  <rect x="232" y="252" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="362" y="252" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="492" y="252" width="110" height="110" rx="22" fill="#f85149"/>
+  <rect x="622" y="252" width="110" height="110" rx="22" fill="#3fb950"/>
+
+  <!-- Row 2 -->
+  <rect x="232" y="382" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="362" y="382" width="110" height="110" rx="22" fill="#d29922"/>
+  <rect x="492" y="382" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="622" y="382" width="110" height="110" rx="22" fill="#3fb950"/>
+
+  <!-- Row 3 -->
+  <rect x="232" y="512" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="362" y="512" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="492" y="512" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="622" y="512" width="110" height="110" rx="22" fill="#8b949e"/>
+
+  <!-- Row 4 (partial - 2 dots) -->
+  <rect x="232" y="642" width="110" height="110" rx="22" fill="#3fb950"/>
+  <rect x="362" y="642" width="110" height="110" rx="22" fill="#3fb950"/>
+</svg>
