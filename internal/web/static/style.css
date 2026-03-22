@@ -367,6 +367,7 @@ header h1 {
 
 .view.hidden { display: none; }
 .list-only.hidden-ctrl { display: none; }
+.topo-only.hidden-ctrl { display: none; }
 
 select, input {
   -webkit-appearance: none;
@@ -660,8 +661,10 @@ main {
   border-bottom: none;
 }
 
-.pod-row:hover {
-  background: #161b22;
+.pod-row:hover,
+.pod-row-wrap:hover > .pod-row {
+  background: #21262d !important;
+  cursor: pointer;
 }
 
 .pod-ns {
@@ -777,10 +780,8 @@ main {
 
 
 .flat-list {
-  background: #161b22;
   border: 1px solid #30363d;
   border-radius: 6px;
-  overflow: hidden;
 }
 
 .pod-row {

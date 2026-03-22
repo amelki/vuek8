@@ -594,18 +594,6 @@ function podRow(p, flat) {
   const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
   r += `<span class="pod-col pod-col-right pod-info-tag" title="${esc(tag)}">${esc(tag)}</span>`;
   r += `</div>`;
-
-  if (isOpen && p.containers) {
-    r += `<div class="container-list">`;
-    for (const c of p.containers) {
-      r += `<div class="container-row">`;
-      r += `<span class="container-name">${esc(c.name)}</span>`;
-      r += `<span class="container-image">${esc(c.image)}</span>`;
-      r += `<span class="container-tag" title="${esc(c.tag)}">${esc(c.tag)}</span>`;
-      r += `</div>`;
-    }
-    r += `</div>`;
-  }
   r += `</div>`;
   return r;
 }
@@ -1066,6 +1054,28 @@ function nodePool(name) {
   return parts.slice(0, i + 1).join('-');
 }
 
+function nodeSubnet(node) {
+  if (!node.ip) return 'unknown';
+  const parts = node.ip.split('.');
+  return parts.slice(0, 3).join('.') + '.x';
+}
+
+function getTopoGroupKey(node) {
+  const mode = document.getElementById('topo-group').value;
+  switch (mode) {
+    case 'pool': return nodePool(node.name);
+    case 'role': return node.roles || 'unknown';
+    case 'subnet': return nodeSubnet(node);
+    case 'flat': return 'All nodes';
+    case 'label': {
+      const labelKey = document.getElementById('topo-label-select').value;
+      if (!labelKey) return 'unlabeled';
+      return (node.labels && node.labels[labelKey]) || 'unlabeled';
+    }
+    default: return nodePool(node.name);
+  }
+}
+
 function dotClass(status) {
   const s = status.toLowerCase().replace(/[^a-z]/g, '');
   const known = ['running','succeeded','completed','pending','containercreating','failed','error','crashloopbackoff','imagepullbackoff','errimagepull','terminating'];
@@ -1156,7 +1166,7 @@ function renderTopology() {
   // Group nodes by pool
   const pools = new Map();
   for (const n of allNodes) {
-    const pool = nodePool(n.name);
+    const pool = getTopoGroupKey(n);
     if (!pools.has(pool)) pools.set(pool, []);
     pools.get(pool).push(n);
   }
@@ -1274,8 +1284,9 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   topoEl.classList.toggle('hidden', tab !== 'topology');
   tree.classList.toggle('hidden', tab !== 'list');
-  // Show/hide list-only controls
+  // Show/hide tab-specific controls
   document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
+  document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'topology'));
   render();
 }
 
@@ -1297,10 +1308,6 @@ function attachListeners() {
   tree.querySelectorAll('.pod-row').forEach(el => {
     el.addEventListener('click', (e) => {
       e.stopPropagation();
-      const id = el.dataset.pod;
-      if (expandedPods.has(id)) expandedPods.delete(id);
-      else expandedPods.add(id);
-      renderTree();
       if (el.dataset.podB64) {
         openDetail(JSON.parse(atob(el.dataset.podB64)));
       }
@@ -1339,6 +1346,34 @@ nsSelect.addEventListener('change', () => { populateWorkloads(); render(); });
 wlSelect.addEventListener('change', render);
 groupSelect.addEventListener('change', render);
 document.getElementById('color-mode').addEventListener('change', render);
+document.getElementById('topo-group').addEventListener('change', () => {
+  const mode = document.getElementById('topo-group').value;
+  const labelSelect = document.getElementById('topo-label-select');
+  if (mode === 'label') {
+    // Populate label keys from all nodes
+    const keys = new Set();
+    for (const n of allNodes) {
+      if (n.labels) {
+        for (const k of Object.keys(n.labels)) keys.add(k);
+      }
+    }
+    const sorted = [...keys].sort();
+    const current = labelSelect.value;
+    labelSelect.innerHTML = '';
+    for (const k of sorted) {
+      const opt = document.createElement('option');
+      opt.value = k;
+      opt.textContent = k;
+      if (k === current) opt.selected = true;
+      labelSelect.appendChild(opt);
+    }
+    labelSelect.classList.remove('hidden-ctrl');
+  } else {
+    labelSelect.classList.add('hidden-ctrl');
+  }
+  render();
+});
+document.getElementById('topo-label-select').addEventListener('change', render);
 podSearch.addEventListener('input', render);
 
 let loading = false;

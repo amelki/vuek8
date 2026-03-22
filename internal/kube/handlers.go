@@ -11,14 +11,16 @@ import (
 )
 
 type NodeInfo struct {
-	Name           string `json:"name"`
-	Status         string `json:"status"`
-	Roles          string `json:"roles"`
-	KubeletVersion string `json:"kubeletVersion"`
-	OS             string `json:"os"`
-	Arch           string `json:"arch"`
-	CPUCapacity    string `json:"cpuCapacity"`
-	MemoryCapacity string `json:"memoryCapacity"`
+	Name           string            `json:"name"`
+	IP             string            `json:"ip"`
+	Status         string            `json:"status"`
+	Roles          string            `json:"roles"`
+	KubeletVersion string            `json:"kubeletVersion"`
+	OS             string            `json:"os"`
+	Arch           string            `json:"arch"`
+	CPUCapacity    string            `json:"cpuCapacity"`
+	MemoryCapacity string            `json:"memoryCapacity"`
+	Labels         map[string]string `json:"labels"`
 }
 
 type ContainerInfo struct {
@@ -132,10 +134,33 @@ func (c *Client) buildNodes(nodeList *corev1.NodeList) []NodeInfo {
 			roles = "worker"
 		}
 
+		// Get internal IP
+		ip := ""
+		for _, addr := range node.Status.Addresses {
+			if addr.Type == corev1.NodeInternalIP {
+				ip = addr.Address
+				break
+			}
+		}
+
+		// Filter out noisy labels, keep useful ones
+		filteredLabels := make(map[string]string)
+		for k, v := range node.Labels {
+			// Skip beta.kubernetes.io and kubernetes.io/os, kubernetes.io/arch (already in fields)
+			if k == "beta.kubernetes.io/arch" || k == "beta.kubernetes.io/os" ||
+				k == "kubernetes.io/arch" || k == "kubernetes.io/os" ||
+				k == "kubernetes.io/hostname" {
+				continue
+			}
+			filteredLabels[k] = v
+		}
+
 		nodes = append(nodes, NodeInfo{
 			Name:           node.Name,
+			IP:             ip,
 			Status:         status,
 			Roles:          roles,
+			Labels:         filteredLabels,
 			KubeletVersion: node.Status.NodeInfo.KubeletVersion,
 			OS:             node.Status.NodeInfo.OperatingSystem,
 			Arch:           node.Status.NodeInfo.Architecture,
