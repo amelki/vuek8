@@ -22,12 +22,16 @@ func generateUUID() string {
 }
 
 // EnsureInstallID returns the install ID from config, generating one if needed.
+// On first launch, prints a telemetry notice.
 func EnsureInstallID(cfg *config.Config) string {
 	if cfg.InstallID != "" {
 		return cfg.InstallID
 	}
 	cfg.InstallID = generateUUID()
 	_ = cfg.Save()
+	fmt.Println("Telemetry: Vue.k8 sends anonymous usage data (install ID, version, OS, arch).")
+	fmt.Println("           No cluster data or personal info is collected.")
+	fmt.Println("           To disable: run with --no-telemetry")
 	return cfg.InstallID
 }
 

@@ -105,6 +105,22 @@ make clean      # Clean build artifacts
 - **Wails** — Native desktop window via macOS WebKit. No Electron.
 - **Single binary** — Static files embedded with `go:embed`. Everything ships as one file.
 
+## Telemetry
+
+Vue.k8 sends an anonymous ping on startup to help us understand usage. This includes:
+
+- A random install ID (UUID, not tied to you)
+- App version
+- OS and architecture (e.g. `darwin`, `arm64`)
+
+**No cluster data, no personal information, no IP tracking.**
+
+To opt out, run with `--no-telemetry`:
+
+```bash
+vuek8 --no-telemetry
+```
+
 ## License
 
 [Business Source License 1.1](LICENSE) — free for personal and non-commercial use. Converts to Apache 2.0 on 2030-03-22.

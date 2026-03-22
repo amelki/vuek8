@@ -19,6 +19,7 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig file (default: auto-discover from ~/.kube/)")
 	browserMode := flag.Bool("browser", false, "open in browser instead of native window")
 	demoMode := flag.Bool("demo", false, "run with sample data (no real cluster needed)")
+	noTelemetry := flag.Bool("no-telemetry", false, "disable anonymous usage telemetry")
 	flag.Parse()
 
 	var srv *http.Server
@@ -30,9 +31,10 @@ func main() {
 			log.Fatalf("Failed to initialize: %v", err)
 		}
 
-		// Telemetry: ensure install ID exists and send anonymous ping
-		installID := telemetry.EnsureInstallID(mgr.Config())
-		telemetry.Ping(installID)
+		if !*noTelemetry {
+			installID := telemetry.EnsureInstallID(mgr.Config())
+			telemetry.Ping(installID)
+		}
 
 		srv = web.NewServer(mgr)
 	}
