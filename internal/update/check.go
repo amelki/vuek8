@@ -9,16 +9,16 @@ import (
 
 var Version = "dev" // set at build time via -ldflags
 
-// BaseURL is the root URL for the release infrastructure (S3/CloudFront).
-// Override at build time via -ldflags if needed.
-var BaseURL = "https://releases.vuek8.app"
+const (
+	GitHubRepo       = "amelki/vuek8"
+	GitHubReleasesURL = "https://github.com/" + GitHubRepo + "/releases"
+)
 
-type LatestRelease struct {
-	Version  string `json:"version"`
-	MacARM   string `json:"macArm"`
-	MacIntel string `json:"macIntel"`
-	Linux    string `json:"linux"`
-	Windows  string `json:"windows"`
+// BaseURL for the telemetry API (API Gateway). Only used for /api/ping.
+var BaseURL = "https://qyxgzswgwc.execute-api.eu-west-3.amazonaws.com"
+
+type ghRelease struct {
+	TagName string `json:"tag_name"`
 }
 
 type UpdateInfo struct {
@@ -32,7 +32,7 @@ func Check() UpdateInfo {
 	info := UpdateInfo{Current: Version}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(BaseURL + "/latest.json")
+	resp, err := client.Get("https://api.github.com/repos/" + GitHubRepo + "/releases/latest")
 	if err != nil {
 		return info
 	}
@@ -42,16 +42,16 @@ func Check() UpdateInfo {
 		return info
 	}
 
-	var release LatestRelease
+	var release ghRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return info
 	}
 
-	latest := strings.TrimPrefix(release.Version, "v")
+	latest := strings.TrimPrefix(release.TagName, "v")
 	current := strings.TrimPrefix(Version, "v")
 
 	info.Latest = latest
-	info.UpdateURL = BaseURL
+	info.UpdateURL = GitHubReleasesURL + "/tag/" + release.TagName
 	info.HasUpdate = latest != current && current != "dev"
 
 	return info

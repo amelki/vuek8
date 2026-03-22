@@ -82,26 +82,28 @@ binaries:
 	GOOS=windows GOARCH=amd64 CGO_ENABLED=0 \
 		go build -ldflags="$(LDFLAGS)" -o dist/release/vuek8-$(VERSION)-windows-amd64.exe .
 
-# Build + upload to S3 + update latest.json
+# Build, sign, notarize, and publish to GitHub Releases
 release: binaries notarize
 	@mkdir -p dist/release
 	cp dist/$(APP_NAME)-$(VERSION).dmg dist/release/$(APP_NAME)-$(VERSION).dmg
-	@echo "Uploading to S3..."
-	aws --profile $(AWS_PROFILE) --region $(AWS_REGION) s3 cp dist/release/ s3://$(S3_BUCKET)/releases/ \
-		--recursive --exclude "*" \
-		--include "vuek8-$(VERSION)-*" --include "$(APP_NAME)-$(VERSION).dmg"
-	@echo "Uploading latest.json..."
-	@echo '{"version":"$(VERSION)","macDmg":"releases/$(APP_NAME)-$(VERSION).dmg","macArm":"releases/vuek8-$(VERSION)-macos-arm64","macIntel":"releases/vuek8-$(VERSION)-macos-amd64","linux":"releases/vuek8-$(VERSION)-linux-amd64","windows":"releases/vuek8-$(VERSION)-windows-amd64.exe"}' \
-		| python3 -m json.tool > dist/release/latest.json
-	aws --profile $(AWS_PROFILE) --region $(AWS_REGION) s3 cp dist/release/latest.json s3://$(S3_BUCKET)/latest.json \
-		--content-type "application/json" --cache-control "max-age=300"
-	@echo "Uploading website..."
+	@echo "Creating GitHub Release v$(VERSION)..."
+	gh release create v$(VERSION) \
+		dist/release/$(APP_NAME)-$(VERSION).dmg \
+		dist/release/vuek8-$(VERSION)-macos-arm64 \
+		dist/release/vuek8-$(VERSION)-macos-amd64 \
+		dist/release/vuek8-$(VERSION)-linux-amd64 \
+		dist/release/vuek8-$(VERSION)-windows-amd64.exe \
+		--title "v$(VERSION)" \
+		--notes "See https://vuek8.app for details."
+	@echo "Release v$(VERSION) published on GitHub."
+
+# Upload website to S3
+deploy-site:
 	aws --profile $(AWS_PROFILE) --region $(AWS_REGION) s3 sync website/ s3://$(S3_BUCKET)/ \
 		--exclude ".DS_Store"
-	@echo "Invalidating CloudFront cache..."
 	aws --profile $(AWS_PROFILE) --region $(AWS_REGION) cloudfront create-invalidation \
 		--distribution-id E3Q4IBPDY2EITM --paths "/*" > /dev/null
-	@echo "Release $(VERSION) published."
+	@echo "Website deployed."
 
 clean:
 	rm -rf $(BINARY) dist/
