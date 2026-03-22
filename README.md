@@ -1,8 +1,10 @@
-# vuek8
+# Vue.k8
 
 A fast, lightweight Kubernetes dashboard. A minimal alternative to Lens.
 
 vuek8 auto-discovers your kubeconfig files, connects to your clusters, and gives you a real-time view of your nodes and pods — without the bloat.
+
+![Vue.k8 screenshot](website/screenshot.png)
 
 ## Download
 
@@ -105,4 +107,4 @@ make clean      # Clean build artifacts
 
 ## License
 
-MIT
+[Business Source License 1.1](LICENSE) — free for personal and non-commercial use. Converts to Apache 2.0 on 2030-03-22.
