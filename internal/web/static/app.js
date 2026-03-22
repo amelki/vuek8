@@ -1284,9 +1284,8 @@ function switchTab(tab) {
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   topoEl.classList.toggle('hidden', tab !== 'topology');
   tree.classList.toggle('hidden', tab !== 'list');
-  // Show/hide tab-specific controls
-  document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
   document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'topology'));
+  document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
   render();
 }
 
@@ -1391,7 +1390,6 @@ async function refresh() {
 }
 
 // Initial setup: hide list-only controls
-document.querySelectorAll('.list-only').forEach(el => el.classList.add('hidden-ctrl'));
 
 // --- Sidebar / Cluster management ---
 

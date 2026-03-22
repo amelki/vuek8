@@ -36,30 +36,7 @@
             <option value="">All workloads</option>
           </select>
           <input type="text" id="pod-search" placeholder="Filter pods...">
-          <select id="topo-group" class="topo-only">
-            <option value="pool">Group: Pool</option>
-            <option value="role">Group: Role</option>
-            <option value="subnet">Group: Subnet</option>
-            <option value="flat">Group: Flat</option>
-            <option value="label">Group: Label...</option>
-          </select>
-          <select id="topo-label-select" class="topo-only hidden-ctrl">
-          </select>
-          <select id="color-mode" class="topo-only">
-            <option value="status">Color: Status</option>
-            <option value="cpu">Color: CPU</option>
-            <option value="mem">Color: Memory</option>
-          </select>
-          <select id="group-select" class="list-only">
-            <option value="flat">Flat</option>
-            <option value="node">Group by Node</option>
-            <option value="workload">Group by Workload</option>
-            <option value="node-workload">Node / Workload</option>
-            <option value="workload-node">Workload / Node</option>
-          </select>
           <span id="pod-count"></span>
-          <button id="expand-all" class="list-only" title="Expand all">&#9660;</button>
-          <button id="collapse-all" class="list-only" title="Collapse all">&#9654;</button>
           <span id="refresh-indicator" title="Auto-refreshes every 3s"></span>
         </div>
         <span class="app-brand">Vue.k8</span>
@@ -73,6 +50,29 @@
           </div>
           <span id="progress-text" class="progress-text"></span>
         </div>
+        <span class="tab-sep"></span>
+        <select id="topo-group" class="tab-ctrl topo-only">
+          <option value="pool">Group: Pool</option>
+          <option value="role">Group: Role</option>
+          <option value="subnet">Group: Subnet</option>
+          <option value="flat">Group: Flat</option>
+          <option value="label">Group: Label...</option>
+        </select>
+        <select id="topo-label-select" class="tab-ctrl hidden-ctrl"></select>
+        <select id="color-mode" class="tab-ctrl topo-only">
+          <option value="status">Color: Status</option>
+          <option value="cpu">Color: CPU</option>
+          <option value="mem">Color: Memory</option>
+        </select>
+        <select id="group-select" class="tab-ctrl list-only hidden-ctrl">
+          <option value="flat">Flat</option>
+          <option value="node">Group by Node</option>
+          <option value="workload">Group by Workload</option>
+          <option value="node-workload">Node / Workload</option>
+          <option value="workload-node">Workload / Node</option>
+        </select>
+        <button id="expand-all" class="tab-ctrl list-only hidden-ctrl" title="Expand all">&#9660;</button>
+        <button id="collapse-all" class="tab-ctrl list-only hidden-ctrl" title="Collapse all">&#9654;</button>
       </div>
       <main>
         <div id="topology" class="view"></div>

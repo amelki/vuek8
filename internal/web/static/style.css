@@ -328,6 +328,7 @@ header h1 {
 
 .tab-bar {
   display: flex;
+  align-items: center;
   background: #0d1117;
   border-bottom: 1px solid #30363d;
   padding: 0 20px;
@@ -359,6 +360,19 @@ header h1 {
   border-bottom-color: #58a6ff;
 }
 
+.tab-sep {
+  flex: 1;
+}
+
+.tab-ctrl {
+  font-size: 11px !important;
+  padding: 2px 6px !important;
+}
+
+select.tab-ctrl {
+  padding-right: 20px !important;
+}
+
 .controls {
   display: flex;
   align-items: center;
@@ -366,8 +380,7 @@ header h1 {
 }
 
 .view.hidden { display: none; }
-.list-only.hidden-ctrl { display: none; }
-.topo-only.hidden-ctrl { display: none; }
+.hidden-ctrl { display: none !important; }
 
 select, input {
   -webkit-appearance: none;
