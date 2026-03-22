@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vue.k8 — Lightweight Kubernetes Dashboard</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <header>
+        <nav>
+            <div class="logo">Vue.k8</div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="#download">Download</a>
+                <a href="https://github.com/amelki/vuek8" target="_blank">GitHub</a>
+            </div>
+        </nav>
+    </header>
+
+    <section class="hero">
+        <h1>Vue.k8</h1>
+        <p class="tagline">A fast, lightweight Kubernetes dashboard.<br>See your clusters. No bloat.</p>
+        <a href="#download" class="cta-button">Download</a>
+        <div class="screenshot">
+            <img src="screenshot.png" alt="Vue.k8 screenshot">
+        </div>
+    </section>
+
+    <section id="features" class="features">
+        <h2>Features</h2>
+        <div class="feature-grid">
+            <div class="feature">
+                <div class="feature-icon">&#9678;</div>
+                <h3>Topology View</h3>
+                <p>Visual map of nodes and pods. See how your workloads are distributed across the cluster at a glance.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">&#9741;</div>
+                <h3>Multi-Cluster</h3>
+                <p>Auto-discovers all kubeconfig files. Switch between clusters instantly with a single click.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">&#9776;</div>
+                <h3>Live Logs</h3>
+                <p>Stream pod logs in real-time. Search, filter, and download. No kubectl required.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">&#9889;</div>
+                <h3>Real-Time</h3>
+                <p>Server-sent events keep everything in sync. Pod status, node metrics, and more — always up to date.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">&#9881;</div>
+                <h3>Lightweight</h3>
+                <p>Single binary, no Electron. Native desktop window with minimal resource usage. Under 30 MB.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">&#8631;</div>
+                <h3>Zero Config</h3>
+                <p>Just launch it. Vue.k8 reads your existing kubeconfig files and connects automatically.</p>
+            </div>
+        </div>
+    </section>
+
+    <section id="download" class="download">
+        <h2>Download</h2>
+        <p class="download-sub">Free and open source. Available for macOS, Linux, and Windows.</p>
+        <div class="download-grid">
+            <a href="releases/VueK8-latest-macos-arm64.dmg" class="download-card">
+                <div class="download-icon">&#63743;</div>
+                <div class="download-label">macOS (Apple Silicon)</div>
+                <div class="download-ext">.dmg</div>
+            </a>
+            <a href="releases/vuek8-latest-macos-amd64" class="download-card">
+                <div class="download-icon">&#63743;</div>
+                <div class="download-label">macOS (Intel)</div>
+                <div class="download-ext">binary</div>
+            </a>
+            <a href="releases/vuek8-latest-linux-amd64" class="download-card">
+                <div class="download-icon">&#9881;</div>
+                <div class="download-label">Linux (amd64)</div>
+                <div class="download-ext">binary</div>
+            </a>
+            <a href="releases/vuek8-latest-windows-amd64.exe" class="download-card">
+                <div class="download-icon">&#9638;</div>
+                <div class="download-label">Windows (amd64)</div>
+                <div class="download-ext">.exe</div>
+            </a>
+        </div>
+    </section>
+
+    <footer>
+        <div class="footer-content">
+            <span class="footer-name">Vue.k8</span>
+            <span class="footer-sep">&middot;</span>
+            <span class="footer-contact"><a href="mailto:hello@vuek8.app">hello@vuek8.app</a></span>
+        </div>
+    </footer>
+</body>
+</html>

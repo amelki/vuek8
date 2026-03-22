@@ -42,14 +42,13 @@ func NewManager(initialKubeconfig string) (*Manager, error) {
 	// Pick initial cluster
 	initialID := ""
 	if initialKubeconfig != "" {
-		// Find the default context from this kubeconfig file
+		// Explicit --kubeconfig flag
 		for _, d := range discovered {
 			if d.KubeconfigPath == initialKubeconfig && d.IsDefault {
 				initialID = d.ID
 				break
 			}
 		}
-		// Fallback: any context from this file
 		if initialID == "" {
 			for _, d := range discovered {
 				if d.KubeconfigPath == initialKubeconfig {
@@ -58,7 +57,16 @@ func NewManager(initialKubeconfig string) (*Manager, error) {
 				}
 			}
 		}
-	} else if len(discovered) > 0 {
+	} else if saved := cfg.GetSettings().ActiveCluster; saved != "" {
+		// Restore last active cluster from settings
+		for _, d := range discovered {
+			if d.ID == saved {
+				initialID = saved
+				break
+			}
+		}
+	}
+	if initialID == "" && len(discovered) > 0 {
 		// Pick first non-hidden default context
 		for _, d := range discovered {
 			if d.IsDefault && !cfg.GetPrefs(d.ID).Hidden {
@@ -167,6 +175,11 @@ func (m *Manager) SwitchTo(id string) error {
 	m.activeCache = cache
 	m.activeID = id
 	m.cancelFn = cancel
+	// Save active cluster to settings
+	s := m.cfg.GetSettings()
+	s.ActiveCluster = id
+	m.cfg.UpdateSettings(s)
+	m.cfg.Save()
 	m.mu.Unlock()
 
 	cache.Start(ctx)
@@ -185,6 +198,12 @@ func (m *Manager) SetHidden(id string, hidden bool) error {
 	defer m.mu.Unlock()
 	m.cfg.SetHidden(id, hidden)
 	return m.cfg.Save()
+}
+
+func (m *Manager) Config() *config.Config {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.cfg
 }
 
 func (m *Manager) GetSettings() config.Settings {

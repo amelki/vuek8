@@ -1038,7 +1038,7 @@ function nodePool(name) {
   // Strip trailing instance identifiers:
   //   "other-5" → "other"               (numeric index)
   //   "shards-dc3-10" → "shards-dc3"    (numeric index)
-  //   "scw-mee6-staging-other-01491037da69411fb40b727" → "scw-mee6-staging-other" (hash)
+  //   "app-pool-a7f8d2e19b" → "app-pool"   (hash suffix)
   const parts = name.split('-');
   let i = parts.length - 1;
   while (i > 0) {
@@ -1287,6 +1287,7 @@ function switchTab(tab) {
   document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'topology'));
   document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
   render();
+  saveSessionState();
 }
 
 function render() {
@@ -1341,10 +1342,10 @@ document.getElementById('collapse-all').addEventListener('click', () => {
   for (const key of expanded.keys()) expanded.set(key, false);
   renderTree();
 });
-nsSelect.addEventListener('change', () => { populateWorkloads(); render(); });
-wlSelect.addEventListener('change', render);
-groupSelect.addEventListener('change', render);
-document.getElementById('color-mode').addEventListener('change', render);
+nsSelect.addEventListener('change', () => { populateWorkloads(); render(); saveSessionState(); });
+wlSelect.addEventListener('change', () => { render(); saveSessionState(); });
+groupSelect.addEventListener('change', () => { render(); saveSessionState(); });
+document.getElementById('color-mode').addEventListener('change', () => { render(); saveSessionState(); });
 document.getElementById('topo-group').addEventListener('change', () => {
   const mode = document.getElementById('topo-group').value;
   const labelSelect = document.getElementById('topo-label-select');
@@ -1371,9 +1372,10 @@ document.getElementById('topo-group').addEventListener('change', () => {
     labelSelect.classList.add('hidden-ctrl');
   }
   render();
+  saveSessionState();
 });
-document.getElementById('topo-label-select').addEventListener('change', render);
-podSearch.addEventListener('input', render);
+document.getElementById('topo-label-select').addEventListener('change', () => { render(); saveSessionState(); });
+podSearch.addEventListener('input', () => { render(); saveSessionState(); });
 
 let loading = false;
 
@@ -1590,6 +1592,39 @@ function applySidebarState() {
   else sidebar.classList.remove('collapsed');
 }
 
+function restoreSessionState() {
+  if (appSettings.activeTab) {
+    activeTab = appSettings.activeTab;
+    switchTab(activeTab);
+  }
+  if (appSettings.namespace) nsSelect.value = appSettings.namespace;
+  if (appSettings.workload) wlSelect.value = appSettings.workload;
+  if (appSettings.podSearch) podSearch.value = appSettings.podSearch;
+  if (appSettings.colorMode) document.getElementById('color-mode').value = appSettings.colorMode;
+  if (appSettings.topoGroup) document.getElementById('topo-group').value = appSettings.topoGroup;
+  if (appSettings.listGroup) document.getElementById('group-select').value = appSettings.listGroup;
+}
+
+function saveSessionState() {
+  appSettings.activeTab = activeTab;
+  appSettings.namespace = nsSelect.value;
+  appSettings.workload = wlSelect.value;
+  appSettings.podSearch = podSearch.value;
+  appSettings.colorMode = document.getElementById('color-mode').value;
+  appSettings.topoGroup = document.getElementById('topo-group').value;
+  appSettings.topoLabel = document.getElementById('topo-label-select').value;
+  appSettings.listGroup = document.getElementById('group-select').value;
+  // Debounced save
+  clearTimeout(saveSessionState._timer);
+  saveSessionState._timer = setTimeout(() => {
+    fetch(apiURL('/api/settings/update'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(appSettings),
+    });
+  }, 500);
+}
+
 document.getElementById('sidebar-toggle').addEventListener('click', () => {
   sidebar.classList.toggle('collapsed');
   saveSetting('sidebarCollapsed', sidebar.classList.contains('collapsed'));
@@ -1679,6 +1714,7 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
   }
   await loadSettings();
   applySidebarState();
+  restoreSessionState();
   checkForUpdate();
   await loadClusters();
   await waitForCache();

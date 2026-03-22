@@ -2,7 +2,6 @@ package update
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,25 +9,30 @@ import (
 
 var Version = "dev" // set at build time via -ldflags
 
-const repo = "amelki/vuek8"
+// BaseURL is the root URL for the release infrastructure (S3/CloudFront).
+// Override at build time via -ldflags if needed.
+var BaseURL = "https://releases.vuek8.app"
 
-type ReleaseInfo struct {
-	TagName string `json:"tag_name"`
-	HTMLURL string `json:"html_url"`
+type LatestRelease struct {
+	Version  string `json:"version"`
+	MacARM   string `json:"macArm"`
+	MacIntel string `json:"macIntel"`
+	Linux    string `json:"linux"`
+	Windows  string `json:"windows"`
 }
 
 type UpdateInfo struct {
-	Current     string `json:"current"`
-	Latest      string `json:"latest,omitempty"`
-	UpdateURL   string `json:"updateUrl,omitempty"`
-	HasUpdate   bool   `json:"hasUpdate"`
+	Current   string `json:"current"`
+	Latest    string `json:"latest,omitempty"`
+	UpdateURL string `json:"updateUrl,omitempty"`
+	HasUpdate bool   `json:"hasUpdate"`
 }
 
 func Check() UpdateInfo {
 	info := UpdateInfo{Current: Version}
 
 	client := &http.Client{Timeout: 5 * time.Second}
-	resp, err := client.Get(fmt.Sprintf("https://api.github.com/repos/%s/releases/latest", repo))
+	resp, err := client.Get(BaseURL + "/latest.json")
 	if err != nil {
 		return info
 	}
@@ -38,16 +42,16 @@ func Check() UpdateInfo {
 		return info
 	}
 
-	var release ReleaseInfo
+	var release LatestRelease
 	if err := json.NewDecoder(resp.Body).Decode(&release); err != nil {
 		return info
 	}
 
-	latest := strings.TrimPrefix(release.TagName, "v")
+	latest := strings.TrimPrefix(release.Version, "v")
 	current := strings.TrimPrefix(Version, "v")
 
 	info.Latest = latest
-	info.UpdateURL = release.HTMLURL
+	info.UpdateURL = BaseURL
 	info.HasUpdate = latest != current && current != "dev"
 
 	return info

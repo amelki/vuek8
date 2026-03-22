@@ -5,24 +5,37 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os/exec"
 	"runtime"
 
 	"vuek8/internal/cluster"
+	"vuek8/internal/demo"
+	"vuek8/internal/telemetry"
 	"vuek8/internal/web"
 )
 
 func main() {
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig file (default: auto-discover from ~/.kube/)")
 	browserMode := flag.Bool("browser", false, "open in browser instead of native window")
+	demoMode := flag.Bool("demo", false, "run with sample data (no real cluster needed)")
 	flag.Parse()
 
-	mgr, err := cluster.NewManager(*kubeconfig)
-	if err != nil {
-		log.Fatalf("Failed to initialize: %v", err)
-	}
+	var srv *http.Server
+	if *demoMode {
+		srv = demo.NewServer()
+	} else {
+		mgr, err := cluster.NewManager(*kubeconfig)
+		if err != nil {
+			log.Fatalf("Failed to initialize: %v", err)
+		}
 
-	srv := web.NewServer(mgr)
+		// Telemetry: ensure install ID exists and send anonymous ping
+		installID := telemetry.EnsureInstallID(mgr.Config())
+		telemetry.Ping(installID)
+
+		srv = web.NewServer(mgr)
+	}
 
 	// Always start the HTTP server (needed for SSE streaming in native mode)
 	listener, err := net.Listen("tcp", "127.0.0.1:0")

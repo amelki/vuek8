@@ -12,13 +12,23 @@ type ClusterPrefs struct {
 }
 
 type Settings struct {
-	ShowAllContexts  bool `json:"showAllContexts,omitempty"`
-	SidebarCollapsed bool `json:"sidebarCollapsed,omitempty"`
+	ShowAllContexts  bool   `json:"showAllContexts,omitempty"`
+	SidebarCollapsed bool   `json:"sidebarCollapsed,omitempty"`
+	ActiveCluster    string `json:"activeCluster,omitempty"`
+	ActiveTab        string `json:"activeTab,omitempty"`
+	Namespace        string `json:"namespace,omitempty"`
+	Workload         string `json:"workload,omitempty"`
+	PodSearch        string `json:"podSearch,omitempty"`
+	ColorMode        string `json:"colorMode,omitempty"`
+	TopoGroup        string `json:"topoGroup,omitempty"`
+	TopoLabel        string `json:"topoLabel,omitempty"`
+	ListGroup        string `json:"listGroup,omitempty"`
 }
 
 type Config struct {
-	Clusters map[string]ClusterPrefs `json:"clusters"`
-	Settings Settings                `json:"settings"`
+	Clusters  map[string]ClusterPrefs `json:"clusters"`
+	Settings  Settings                `json:"settings"`
+	InstallID string                  `json:"installId,omitempty"`
 }
 
 func configPath() string {
