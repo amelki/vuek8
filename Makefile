@@ -45,15 +45,21 @@ sign: app
 	codesign --verify --deep --strict dist/$(APP_NAME).app
 	@echo "Signed."
 
-# macOS .dmg installer with drag-to-Applications
+# macOS .dmg installer with background and icon layout
 dmg: sign
-	rm -rf dist/dmg-staging dist/$(APP_NAME)-$(VERSION).dmg
-	mkdir -p dist/dmg-staging
-	cp -R dist/$(APP_NAME).app dist/dmg-staging/
-	ln -s /Applications dist/dmg-staging/Applications
-	hdiutil create -volname "$(APP_NAME)" -srcfolder dist/dmg-staging -ov -format UDZO dist/$(APP_NAME)-$(VERSION).dmg
-	rm -rf dist/dmg-staging
-	codesign --force --sign "$(SIGN_IDENTITY)" dist/$(APP_NAME)-$(VERSION).dmg
+	rm -f dist/$(APP_NAME)-$(VERSION).dmg
+	create-dmg \
+		--volname "$(APP_NAME)" \
+		--background build/dmg-background.png \
+		--window-pos 200 120 \
+		--window-size 660 400 \
+		--icon-size 120 \
+		--icon "$(APP_NAME).app" 160 190 \
+		--app-drop-link 500 190 \
+		--no-internet-enable \
+		--codesign "$(SIGN_IDENTITY)" \
+		dist/$(APP_NAME)-$(VERSION).dmg \
+		dist/$(APP_NAME).app
 	@echo "Created dist/$(APP_NAME)-$(VERSION).dmg"
 
 # Notarize the DMG with Apple
