@@ -10,8 +10,8 @@
     --border: #1e1e2e;
     --text: #e0e0e8;
     --text-dim: #8888a0;
-    --accent: #6c8cff;
-    --accent-hover: #8aa4ff;
+    --accent: #4d94ff;
+    --accent-hover: #6aabff;
 }
 
 body {
@@ -44,9 +44,11 @@ nav {
 }
 
 .logo {
-    font-size: 1.25rem;
+    font-family: 'Space Grotesk', sans-serif;
+    font-size: 1.4rem;
     font-weight: 700;
-    letter-spacing: -0.02em;
+    color: #4d94ff;
+    letter-spacing: -0.03em;
 }
 
 .nav-links {
