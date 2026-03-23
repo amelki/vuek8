@@ -3,8 +3,9 @@ const wlSelect = document.getElementById('workload-select');
 const groupSelect = document.getElementById('group-select');
 const podSearch = document.getElementById('pod-search');
 const podCount = document.getElementById('pod-count');
-const tree = document.getElementById('tree');
-const topoEl = document.getElementById('topology');
+const tree = document.getElementById('pods-view');
+const topoEl = document.getElementById('nodes-view');
+const workloadsEl = document.getElementById('workloads-view');
 const tooltipEl = document.getElementById('tooltip');
 const detailPanel = document.getElementById('detail-panel');
 const detailTitle = document.getElementById('detail-title');
@@ -14,7 +15,7 @@ const sidebar = document.getElementById('sidebar');
 const clusterListEl = document.getElementById('cluster-list');
 
 let apiBase = ''; // empty = same origin (browser mode), set to http://... in native mode
-let activeTab = 'topology';
+let activeTab = 'nodes';
 let allNodes = [];
 let allPods = [];
 let allMetrics = {}; // key: "namespace/podName" -> { cpuMilli, memBytes }
@@ -90,7 +91,7 @@ function hideProgress() {
 }
 
 function showSkeleton() {
-  if (activeTab !== 'topology') return;
+  if (activeTab !== 'nodes') return;
   // Generate fake topology cards
   const pools = [
     { name: '', nodes: 4, dotsPerNode: 6 },
@@ -1151,10 +1152,7 @@ function dotStyle(p) {
   return '';
 }
 
-function renderTopology() {
-  const filtered = getFilteredPods();
-  const filter = podSearch.value.toLowerCase();
-
+function renderTopologyByNodes(filtered, filter) {
   // Group pods by node
   const podsByNode = new Map();
   for (const p of filtered) {
@@ -1171,7 +1169,6 @@ function renderTopology() {
     pools.get(pool).push(n);
   }
 
-  // Sort pools by name
   const sortedPools = [...pools.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
   let html = '';
@@ -1202,11 +1199,169 @@ function renderTopology() {
 
     html += `</div></div>`;
   }
+  return html;
+}
 
+function renderTopologyByPods(filtered, filter, mode) {
+  // Group pods into cards
+  const cards = new Map();
+  for (const p of filtered) {
+    let key;
+    if (mode === 'workload-by-kind' || mode === 'workload-flat') {
+      key = p.workloadName || p.name;
+    } else if (mode === 'kind') {
+      key = p.workloadKind || 'Pod';
+    } else {
+      key = p.namespace || 'default';
+    }
+    if (!cards.has(key)) cards.set(key, []);
+    cards.get(key).push(p);
+  }
+
+  // Sort by pod count descending
+  const sorted = [...cards.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  // Shared layout helpers
+  const cardWidth = 180;
+  const cardPadding = 16;
+  const innerWidth = cardWidth - cardPadding;
+  const dotSize = 13;
+  const dotsPerRow = Math.floor(innerWidth / dotSize);
+  const headerHeight = 52;
+  const gap = 10;
+
+  function estimateHeight(podCount) {
+    const rows = Math.ceil(podCount / dotsPerRow);
+    return headerHeight + rows * dotSize + cardPadding;
+  }
+
+  function renderCard(name, pods, showKind) {
+    const running = pods.filter(p => p.status === 'Running').length;
+    const notRunning = pods.length - running;
+    const kindLabel = showKind ? (pods[0].workloadKind || '') : '';
+    let h = '';
+    h += `<div class="topo-machine ${notRunning > 0 ? 'has-errors' : ''}">`;
+    h += `<div class="topo-machine-header">`;
+    h += `<span class="topo-machine-name">${esc(name)}</span>`;
+    h += `<span class="topo-machine-stats">${pods.length}</span>`;
+    h += `</div>`;
+    h += `<div class="topo-machine-resources">${kindLabel ? esc(kindLabel) + ' &middot; ' : ''}${running} running${notRunning > 0 ? ' · ' + notRunning + ' unhealthy' : ''}</div>`;
+    h += `<div class="topo-pods">`;
+    for (const p of pods) {
+      h += `<div class="${dotClass(p.status)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+    }
+    h += `</div></div>`;
+    return h;
+  }
+
+  // Masonry layout: distributes cards into columns with ceiling-based packing
+  function masonryLayout(items, showKind) {
+    const containerWidth = topoEl.clientWidth || 1200;
+    const colWidth = cardWidth + 10;
+    const numCols = Math.max(1, Math.floor(containerWidth / colWidth));
+    const columns = Array.from({length: numCols}, () => ({html: '', height: 0}));
+
+    let cardIdx = 0;
+
+    // First row: fill left to right
+    for (let c = 0; c < numCols && cardIdx < items.length; c++, cardIdx++) {
+      const [name, pods] = items[cardIdx];
+      columns[c].html += renderCard(name, pods, showKind);
+      columns[c].height += estimateHeight(pods.length) + gap;
+    }
+
+    // Remaining: sweep left→right, place where it fits under ceiling
+    while (cardIdx < items.length) {
+      const ceiling = Math.max(...columns.map(c => c.height));
+      let placedAny = false;
+
+      for (let c = 0; c < numCols && cardIdx < items.length; c++) {
+        const [name, pods] = items[cardIdx];
+        const cardH = estimateHeight(pods.length) + gap;
+        if (columns[c].height + cardH <= ceiling + gap) {
+          columns[c].html += renderCard(name, pods, showKind);
+          columns[c].height += cardH;
+          cardIdx++;
+          placedAny = true;
+        }
+      }
+
+      if (!placedAny) {
+        const [name, pods] = items[cardIdx];
+        let minIdx = 0;
+        for (let c = 1; c < numCols; c++) {
+          if (columns[c].height < columns[minIdx].height) minIdx = c;
+        }
+        columns[minIdx].html += renderCard(name, pods, showKind);
+        columns[minIdx].height += estimateHeight(pods.length) + gap;
+        cardIdx++;
+      }
+    }
+
+    let h = `<div class="topo-masonry">`;
+    for (const col of columns) {
+      h += `<div class="topo-masonry-col">${col.html}</div>`;
+    }
+    h += `</div>`;
+    return h;
+  }
+
+  let html = '';
+
+  if (mode === 'workload-by-kind') {
+    // Group cards by workload kind, each kind is a section
+    const byKind = new Map();
+    for (const [name, pods] of sorted) {
+      const kind = pods[0].workloadKind || 'Pod';
+      if (!byKind.has(kind)) byKind.set(kind, []);
+      byKind.get(kind).push([name, pods]);
+    }
+    const kindOrder = ['Deployment', 'StatefulSet', 'DaemonSet', 'CronJob', 'Job', 'Pod'];
+    const sortedKinds = [...byKind.entries()].sort((a, b) => {
+      const ai = kindOrder.indexOf(a[0]), bi = kindOrder.indexOf(b[0]);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+
+    for (const [kind, workloads] of sortedKinds) {
+      const totalPods = workloads.reduce((sum, w) => sum + w[1].length, 0);
+      html += `<div class="topo-pool">`;
+      html += `<div class="topo-pool-header">${esc(kind)}s <span class="pool-count">${workloads.length} workloads / ${totalPods} pods</span></div>`;
+      html += masonryLayout(workloads, false);
+      html += `</div>`;
+    }
+  } else {
+    const totalPods = filtered.length;
+    const label = mode === 'workload-flat' ? 'workloads' : mode === 'kind' ? 'kinds' : 'namespaces';
+    html += `<div class="topo-pool">`;
+    html += `<div class="topo-pool-header">${esc(label)} <span class="pool-count">${sorted.length} ${label} / ${totalPods} pods</span></div>`;
+    html += masonryLayout(sorted, false);
+  }
+  html += `</div></div>`;
+
+  return html;
+}
+
+function renderNodes() {
+  const filtered = getFilteredPods();
+  const filter = podSearch.value.toLowerCase();
+  const html = renderTopologyByNodes(filtered, filter);
   topoEl.innerHTML = html;
+  attachTopoDotListeners(topoEl);
+}
 
-  // Attach hover tooltips
-  topoEl.querySelectorAll('.topo-dot').forEach(el => {
+function renderWorkloads() {
+  const filtered = getFilteredPods();
+  const filter = podSearch.value.toLowerCase();
+  const wlGroup = document.getElementById('workload-group').value;
+  const modeMap = {'kind': 'workload-by-kind', 'flat': 'workload-flat', 'by-kind': 'kind'};
+  const html = renderTopologyByPods(filtered, filter, modeMap[wlGroup] || 'workload-by-kind');
+  workloadsEl.innerHTML = html;
+  attachTopoDotListeners(workloadsEl);
+}
+
+function attachTopoDotListeners(container) {
+
+  container.querySelectorAll('.topo-dot').forEach(el => {
     el.addEventListener('mouseenter', (e) => {
       const p = JSON.parse(atob(el.dataset.podB64));
       const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
@@ -1282,16 +1437,22 @@ function positionTooltip(e) {
 function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
-  topoEl.classList.toggle('hidden', tab !== 'topology');
-  tree.classList.toggle('hidden', tab !== 'list');
-  document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'topology'));
-  document.querySelectorAll('.list-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'list'));
+  topoEl.classList.toggle('hidden', tab !== 'nodes');
+  workloadsEl.classList.toggle('hidden', tab !== 'workloads');
+  tree.classList.toggle('hidden', tab !== 'pods');
+  // Show/hide tab-specific controls
+  document.querySelectorAll('.nodes-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'nodes'));
+  document.querySelectorAll('.workloads-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'workloads'));
+  document.querySelectorAll('.pods-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'pods'));
+  // Color mode is shared between nodes and workloads
+  document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'nodes' && tab !== 'workloads'));
   render();
   saveSessionState();
 }
 
 function render() {
-  if (activeTab === 'topology') renderTopology();
+  if (activeTab === 'nodes') renderNodes();
+  else if (activeTab === 'workloads') renderWorkloads();
   else renderTree();
 }
 
@@ -1375,6 +1536,7 @@ document.getElementById('topo-group').addEventListener('change', () => {
   saveSessionState();
 });
 document.getElementById('topo-label-select').addEventListener('change', () => { render(); saveSessionState(); });
+document.getElementById('workload-group').addEventListener('change', () => { render(); saveSessionState(); });
 podSearch.addEventListener('input', () => { render(); saveSessionState(); });
 
 let loading = false;

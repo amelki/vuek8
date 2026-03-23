@@ -42,8 +42,9 @@
         <span class="app-brand">Vue.k8</span>
       </header>
       <div class="tab-bar">
-        <button class="tab active" data-tab="topology">Topology</button>
-        <button class="tab" data-tab="list">List</button>
+        <button class="tab active" data-tab="nodes">Nodes</button>
+        <button class="tab" data-tab="workloads">Workloads</button>
+        <button class="tab" data-tab="pods">Pods</button>
         <div id="progress-bar" class="progress-bar hidden">
           <div class="progress-track">
             <div id="progress-fill" class="progress-fill"></div>
@@ -51,7 +52,8 @@
           <span id="progress-text" class="progress-text"></span>
         </div>
         <span class="tab-sep"></span>
-        <select id="topo-group" class="tab-ctrl topo-only">
+        <!-- Nodes tab controls -->
+        <select id="topo-group" class="tab-ctrl nodes-only">
           <option value="pool">Group: Pool</option>
           <option value="role">Group: Role</option>
           <option value="subnet">Group: Subnet</option>
@@ -59,24 +61,33 @@
           <option value="label">Group: Label...</option>
         </select>
         <select id="topo-label-select" class="tab-ctrl hidden-ctrl"></select>
+        <!-- Workloads tab controls -->
+        <select id="workload-group" class="tab-ctrl workloads-only hidden-ctrl">
+          <option value="kind">Group: Kind</option>
+          <option value="flat">Group: Flat</option>
+          <option value="by-kind">Cards: Kind</option>
+        </select>
+        <!-- Shared color mode (nodes + workloads) -->
         <select id="color-mode" class="tab-ctrl topo-only">
           <option value="status">Color: Status</option>
           <option value="cpu">Color: CPU</option>
           <option value="mem">Color: Memory</option>
         </select>
-        <select id="group-select" class="tab-ctrl list-only hidden-ctrl">
+        <!-- Pods tab controls -->
+        <select id="group-select" class="tab-ctrl pods-only hidden-ctrl">
           <option value="flat">Flat</option>
           <option value="node">Group by Node</option>
           <option value="workload">Group by Workload</option>
           <option value="node-workload">Node / Workload</option>
           <option value="workload-node">Workload / Node</option>
         </select>
-        <button id="expand-all" class="tab-ctrl list-only hidden-ctrl" title="Expand all">&#9660;</button>
-        <button id="collapse-all" class="tab-ctrl list-only hidden-ctrl" title="Collapse all">&#9654;</button>
+        <button id="expand-all" class="tab-ctrl pods-only hidden-ctrl" title="Expand all">&#9660;</button>
+        <button id="collapse-all" class="tab-ctrl pods-only hidden-ctrl" title="Collapse all">&#9654;</button>
       </div>
       <main>
-        <div id="topology" class="view"></div>
-        <div id="tree" class="view hidden"></div>
+        <div id="nodes-view" class="view"></div>
+        <div id="workloads-view" class="view hidden"></div>
+        <div id="pods-view" class="view hidden"></div>
       </main>
     </div>
   </div>

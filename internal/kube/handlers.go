@@ -262,10 +262,31 @@ func workloadInfo(pod corev1.Pod) (name, kind string) {
 	case "DaemonSet":
 		return owner.Name, "DaemonSet"
 	case "Job":
+		// CronJob creates Jobs named like:
+		//   <cronjob>-1774227600           (unix timestamp)
+		//   <cronjob>-2023-05-09-102525    (date-time)
+		// Strip trailing numeric segments to group under the CronJob name
+		parts := strings.Split(owner.Name, "-")
+		i := len(parts) - 1
+		for i > 0 && isNumeric(parts[i]) {
+			i--
+		}
+		if i < len(parts)-1 {
+			return strings.Join(parts[:i+1], "-"), "CronJob"
+		}
 		return owner.Name, "Job"
 	default:
 		return owner.Name, owner.Kind
 	}
+}
+
+func isNumeric(s string) bool {
+	for _, c := range s {
+		if c < '0' || c > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
 }
 
 func podStatus(pod corev1.Pod) string {
