@@ -108,8 +108,55 @@
       <div class="modal-body">
         <input type="text" id="rename-input" class="modal-input" placeholder="Display name">
         <div class="modal-actions">
+          <button id="rename-reset" class="btn btn-ghost">Reset</button>
           <button id="rename-cancel" class="btn btn-ghost">Cancel</button>
           <button id="rename-confirm" class="btn btn-primary">Rename</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div id="icon-modal" class="modal-overlay hidden">
+    <div class="modal modal-md">
+      <div class="modal-header">
+        <span class="modal-title">Set cluster icon</span>
+        <button id="icon-modal-close" class="detail-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="icon-source-tabs">
+          <button class="icon-src-tab active" data-src="url">Fetch from URL</button>
+          <button class="icon-src-tab" data-src="file">Upload file</button>
+        </div>
+        <div class="icon-src-panels">
+          <div id="icon-src-url" class="icon-src-panel">
+            <div class="icon-url-row">
+              <input type="text" id="icon-url-input" class="modal-input" placeholder="Website or image URL (e.g. github.com)">
+              <button id="icon-url-btn" class="btn btn-primary">Fetch</button>
+            </div>
+          </div>
+          <div id="icon-src-file" class="icon-src-panel hidden">
+            <button id="icon-file-btn" class="btn btn-ghost" style="width:100%">Choose image file...</button>
+          </div>
+        </div>
+        <div id="icon-preview-section" class="icon-preview-section hidden">
+          <div class="icon-preview-row">
+            <canvas id="icon-preview-canvas" width="64" height="64" class="icon-preview-canvas"></canvas>
+            <div class="icon-filters">
+              <span class="icon-filter-label">Tint</span>
+              <div class="icon-filter-swatches">
+                <button class="icon-swatch active" data-filter="none" title="Original"></button>
+                <button class="icon-swatch" data-filter="grayscale" title="Grayscale" style="background:#888"></button>
+                <button class="icon-swatch" data-filter="red" title="Red" style="background:#e05050"></button>
+                <button class="icon-swatch" data-filter="orange" title="Orange" style="background:#e0a030"></button>
+                <button class="icon-swatch" data-filter="green" title="Green" style="background:#40a060"></button>
+                <button class="icon-swatch" data-filter="blue" title="Blue" style="background:#4080e0"></button>
+                <button class="icon-swatch" data-filter="purple" title="Purple" style="background:#9060d0"></button>
+              </div>
+            </div>
+          </div>
+          <div class="modal-actions">
+            <button id="icon-cancel-btn" class="btn btn-ghost">Cancel</button>
+            <button id="icon-apply-btn" class="btn btn-primary">Apply</button>
+          </div>
         </div>
       </div>
     </div>

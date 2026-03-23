@@ -19,6 +19,7 @@ type ClusterInfo struct {
 	Active      bool   `json:"active"`
 	IsDefault   bool   `json:"isDefault"`
 	Error       string `json:"error,omitempty"`
+	Icon        string `json:"icon,omitempty"`
 }
 
 type Manager struct {
@@ -115,6 +116,7 @@ func (m *Manager) ListClusters() []ClusterInfo {
 			Active:      d.ID == m.activeID,
 			IsDefault:   d.IsDefault,
 			Error:       errMsg,
+			Icon:        prefs.Icon,
 		})
 	}
 	return infos
@@ -190,6 +192,13 @@ func (m *Manager) Rename(id, displayName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.cfg.SetDisplayName(id, displayName)
+	return m.cfg.Save()
+}
+
+func (m *Manager) SetIcon(id, icon string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.cfg.SetIcon(id, icon)
 	return m.cfg.Save()
 }
 

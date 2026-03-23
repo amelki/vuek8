@@ -9,20 +9,22 @@ import (
 type ClusterPrefs struct {
 	DisplayName string `json:"displayName,omitempty"`
 	Hidden      bool   `json:"hidden,omitempty"`
+	Icon        string `json:"icon,omitempty"` // base64 data URL
 }
 
 type Settings struct {
-	ShowAllContexts  bool   `json:"showAllContexts,omitempty"`
-	SidebarCollapsed bool   `json:"sidebarCollapsed,omitempty"`
-	ActiveCluster    string `json:"activeCluster,omitempty"`
-	ActiveTab        string `json:"activeTab,omitempty"`
-	Namespace        string `json:"namespace,omitempty"`
-	Workload         string `json:"workload,omitempty"`
-	PodSearch        string `json:"podSearch,omitempty"`
-	ColorMode        string `json:"colorMode,omitempty"`
-	TopoGroup        string `json:"topoGroup,omitempty"`
-	TopoLabel        string `json:"topoLabel,omitempty"`
-	ListGroup        string `json:"listGroup,omitempty"`
+	ShowAllContexts  bool     `json:"showAllContexts,omitempty"`
+	SidebarCollapsed bool     `json:"sidebarCollapsed,omitempty"`
+	ActiveCluster    string   `json:"activeCluster,omitempty"`
+	ActiveTab        string   `json:"activeTab,omitempty"`
+	Namespace        string   `json:"namespace,omitempty"`
+	Workload         string   `json:"workload,omitempty"`
+	PodSearch        string   `json:"podSearch,omitempty"`
+	ColorMode        string   `json:"colorMode,omitempty"`
+	TopoGroup        string   `json:"topoGroup,omitempty"`
+	TopoLabel        string   `json:"topoLabel,omitempty"`
+	ListGroup        string   `json:"listGroup,omitempty"`
+	ClusterOrder     []string `json:"clusterOrder,omitempty"`
 }
 
 type Config struct {
@@ -80,6 +82,12 @@ func (c *Config) SetDisplayName(id, name string) {
 func (c *Config) SetHidden(id string, hidden bool) {
 	prefs := c.Clusters[id]
 	prefs.Hidden = hidden
+	c.Clusters[id] = prefs
+}
+
+func (c *Config) SetIcon(id, icon string) {
+	prefs := c.Clusters[id]
+	prefs.Icon = icon
 	c.Clusters[id] = prefs
 }
 

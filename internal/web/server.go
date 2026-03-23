@@ -33,6 +33,8 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	mux.HandleFunc("/api/clusters/switch", cluster.HandleSwitchCluster(mgr))
 	mux.HandleFunc("/api/clusters/rename", cluster.HandleRenameCluster(mgr))
 	mux.HandleFunc("/api/clusters/hide", cluster.HandleHideCluster(mgr))
+	mux.HandleFunc("/api/clusters/icon", cluster.HandleSetIcon(mgr))
+	mux.HandleFunc("/api/clusters/fetch-icon", cluster.HandleFetchIcon())
 	mux.HandleFunc("/api/settings", cluster.HandleGetSettings(mgr))
 	mux.HandleFunc("/api/settings/update", cluster.HandleUpdateSettings(mgr))
 

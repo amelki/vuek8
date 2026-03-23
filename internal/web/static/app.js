@@ -1585,6 +1585,22 @@ async function saveSetting(key, value) {
   });
 }
 
+function clusterInitials(name) {
+  // "arctis-prod-eu" → "AP", "my-cluster" → "MC", "staging" → "ST"
+  const parts = name.replace(/[^a-zA-Z0-9]+/g, ' ').trim().split(/\s+/);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  const w = parts[0] || '';
+  return (w.length >= 2 ? w[0] + w[1] : w[0] || '?').toUpperCase();
+}
+
+function clusterColor(name) {
+  // Deterministic color from name
+  let hash = 0;
+  for (let i = 0; i < name.length; i++) hash = ((hash << 5) - hash + name.charCodeAt(i)) | 0;
+  const hue = Math.abs(hash) % 360;
+  return `hsl(${hue}, 45%, 35%)`;
+}
+
 function renderSidebar() {
   const showHidden = appSettings.showHidden || false;
   const showAllContexts = appSettings.showAllContexts || false;
@@ -1592,20 +1608,41 @@ function renderSidebar() {
   if (!showAllContexts) visible = visible.filter(c => c.isDefault || c.active);
   if (!showHidden) visible = visible.filter(c => !c.hidden || c.active);
 
+  // Sort by saved order
+  const order = appSettings.clusterOrder || [];
+  if (order.length > 0) {
+    const orderMap = {};
+    order.forEach((id, i) => orderMap[id] = i);
+    visible.sort((a, b) => {
+      const ai = orderMap[a.id] !== undefined ? orderMap[a.id] : 9999;
+      const bi = orderMap[b.id] !== undefined ? orderMap[b.id] : 9999;
+      return ai - bi;
+    });
+  }
+
   let html = '';
   for (const c of visible) {
     const cls = (c.active ? ' active' : '') + (c.hidden ? ' hidden-cluster' : '') + (c.error ? ' error-cluster' : '');
     const fileName = c.filePath.split('/').pop();
-    html += `<div class="cluster-item${cls}" data-cluster-id="${esc(c.id)}">`;
+    const initials = clusterInitials(c.displayName);
+    const color = clusterColor(c.displayName);
+    html += `<div class="cluster-item${cls}" data-cluster-id="${esc(c.id)}" draggable="true">`;
     html += `<div class="cluster-item-row">`;
+    if (c.icon) {
+      html += `<img class="cluster-icon cluster-icon-img" src="${c.icon}" title="${esc(c.displayName)}">`;
+    } else {
+      html += `<div class="cluster-icon" style="background:${color}" title="${esc(c.displayName)}">${esc(initials)}</div>`;
+    }
+    html += `<div class="cluster-item-text">`;
     html += `<span class="cluster-name">${esc(c.displayName)}</span>`;
-    html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8942;</span>`;
-    html += `</div>`;
     html += `<span class="cluster-file">${esc(fileName)}</span>`;
     html += `<span class="cluster-server">${esc(c.server)}</span>`;
     if (c.error) {
       html += `<span class="cluster-error" title="${esc(c.error)}">unreachable</span>`;
     }
+    html += `</div>`;
+    html += `<span class="cluster-menu-btn" data-menu-id="${esc(c.id)}">&#8942;</span>`;
+    html += `</div>`;
     html += `</div>`;
   }
   clusterListEl.innerHTML = html;
@@ -1632,6 +1669,50 @@ function renderSidebar() {
       e.preventDefault();
       e.stopPropagation();
       showClusterMenu(el.dataset.clusterId, e.clientX, e.clientY);
+    });
+  });
+
+  // Drag and drop reordering
+  let dragEl = null;
+  clusterListEl.querySelectorAll('.cluster-item').forEach(el => {
+    el.addEventListener('dragstart', (e) => {
+      dragEl = el;
+      el.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      dragEl = null;
+      clusterListEl.querySelectorAll('.cluster-item').forEach(item => item.classList.remove('drag-over'));
+    });
+    el.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      if (el !== dragEl) {
+        clusterListEl.querySelectorAll('.cluster-item').forEach(item => item.classList.remove('drag-over'));
+        el.classList.add('drag-over');
+      }
+    });
+    el.addEventListener('dragleave', () => {
+      el.classList.remove('drag-over');
+    });
+    el.addEventListener('drop', (e) => {
+      e.preventDefault();
+      if (!dragEl || dragEl === el) return;
+      // Reorder DOM
+      const items = [...clusterListEl.querySelectorAll('.cluster-item')];
+      const fromIdx = items.indexOf(dragEl);
+      const toIdx = items.indexOf(el);
+      if (fromIdx < toIdx) {
+        el.after(dragEl);
+      } else {
+        el.before(dragEl);
+      }
+      el.classList.remove('drag-over');
+      // Save new order
+      const newOrder = [...clusterListEl.querySelectorAll('.cluster-item')].map(item => item.dataset.clusterId);
+      appSettings.clusterOrder = newOrder;
+      saveSessionState();
     });
   });
 }
@@ -1693,6 +1774,19 @@ function showClusterMenu(id, x, y) {
   });
   menu.appendChild(hideItem);
 
+  const iconItem = document.createElement('div');
+  iconItem.className = 'cluster-menu-item';
+  iconItem.textContent = c.icon ? 'Remove icon' : 'Set icon';
+  iconItem.addEventListener('click', () => {
+    closeClusterMenu();
+    if (c.icon) {
+      setClusterIcon(id, '');
+    } else {
+      pickClusterIcon(id);
+    }
+  });
+  menu.appendChild(iconItem);
+
   document.body.appendChild(menu);
   activeMenu = menu;
 
@@ -1715,7 +1809,9 @@ let renameTargetId = null;
 
 function renameCluster(id, currentName) {
   renameTargetId = id;
+  const c = clusters.find(cl => cl.id === id);
   renameInput.value = currentName;
+  renameInput.placeholder = c ? c.contextName : 'Display name';
   renameModal.classList.remove('hidden');
   setTimeout(() => { renameInput.focus(); renameInput.select(); }, 50);
 }
@@ -1734,10 +1830,189 @@ async function confirmRename() {
 }
 
 document.getElementById('rename-confirm').addEventListener('click', confirmRename);
+document.getElementById('rename-reset').addEventListener('click', async () => {
+  if (!renameTargetId) return;
+  renameModal.classList.add('hidden');
+  await fetch(apiURL('/api/clusters/rename'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: renameTargetId, displayName: '' }),
+  });
+  renameTargetId = null;
+  await loadClusters();
+});
 document.getElementById('rename-cancel').addEventListener('click', () => renameModal.classList.add('hidden'));
 document.getElementById('rename-close').addEventListener('click', () => renameModal.classList.add('hidden'));
 renameModal.addEventListener('click', (e) => { if (e.target === renameModal) renameModal.classList.add('hidden'); });
 renameInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') renameModal.classList.add('hidden'); });
+
+let iconTargetId = null;
+let iconOriginalImg = null; // original Image element for re-filtering
+let iconActiveFilter = 'none';
+const iconModal = document.getElementById('icon-modal');
+const iconUrlInput = document.getElementById('icon-url-input');
+const iconCanvas = document.getElementById('icon-preview-canvas');
+const iconPreviewSection = document.getElementById('icon-preview-section');
+
+function pickClusterIcon(id) {
+  iconTargetId = id;
+  iconOriginalImg = null;
+  iconActiveFilter = 'none';
+  iconUrlInput.value = '';
+  iconPreviewSection.classList.add('hidden');
+  document.querySelectorAll('.icon-swatch').forEach(s => s.classList.toggle('active', s.dataset.filter === 'none'));
+  iconModal.classList.remove('hidden');
+  setTimeout(() => iconUrlInput.focus(), 50);
+}
+
+function closeIconModal() {
+  iconModal.classList.add('hidden');
+  iconTargetId = null;
+  iconOriginalImg = null;
+}
+
+function showIconPreview(img) {
+  iconOriginalImg = img;
+  iconActiveFilter = 'none';
+  document.querySelectorAll('.icon-swatch').forEach(s => s.classList.toggle('active', s.dataset.filter === 'none'));
+  applyIconFilter('none');
+  iconPreviewSection.classList.remove('hidden');
+}
+
+function applyIconFilter(filter) {
+  if (!iconOriginalImg) return;
+  iconActiveFilter = filter;
+  const ctx = iconCanvas.getContext('2d');
+  ctx.clearRect(0, 0, 64, 64);
+  ctx.drawImage(iconOriginalImg, 0, 0, 64, 64);
+
+  if (filter === 'none') return;
+
+  const imageData = ctx.getImageData(0, 0, 64, 64);
+  const d = imageData.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] === 0) continue; // skip transparent
+    const gray = 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2];
+
+    if (filter === 'grayscale') {
+      d[i] = d[i + 1] = d[i + 2] = gray;
+    } else {
+      // Tint: blend grayscale with target color
+      const tints = {
+        red:    [220, 60, 60],
+        orange: [220, 160, 40],
+        green:  [60, 170, 90],
+        blue:   [60, 120, 220],
+        purple: [140, 80, 210],
+      };
+      const t = tints[filter] || [gray, gray, gray];
+      const mix = 0.6; // 60% tint, 40% original luminance
+      d[i]     = Math.round(t[0] * mix + gray * (1 - mix));
+      d[i + 1] = Math.round(t[1] * mix + gray * (1 - mix));
+      d[i + 2] = Math.round(t[2] * mix + gray * (1 - mix));
+    }
+  }
+  ctx.putImageData(imageData, 0, 0);
+}
+
+async function fetchAndPreview(url) {
+  url = url.trim();
+  if (!url) return;
+  // Fetch via server to avoid CORS
+  const resp = await fetch(apiURL('/api/clusters/icon'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: '__preview__', url: url }),
+  });
+  // Server saved it to __preview__ — not ideal. Let's use a different approach:
+  // Fetch the data URL from server via a GET-like endpoint
+}
+
+// Better approach: add a /api/clusters/fetch-icon endpoint that returns the data URL
+async function fetchIconDataURL(url) {
+  const resp = await fetch(apiURL('/api/clusters/fetch-icon'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url: url }),
+  });
+  if (!resp.ok) return null;
+  const data = await resp.json();
+  return data.icon || null;
+}
+
+async function fetchAndShowPreview(url) {
+  url = url.trim();
+  if (!url) return;
+  const dataURL = await fetchIconDataURL(url);
+  if (!dataURL) return;
+  const img = new Image();
+  img.onload = () => showIconPreview(img);
+  img.src = dataURL;
+}
+
+function fileToPreview(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    const img = new Image();
+    img.onload = () => showIconPreview(img);
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+// Source tabs
+document.querySelectorAll('.icon-src-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.icon-src-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('icon-src-url').classList.toggle('hidden', tab.dataset.src !== 'url');
+    document.getElementById('icon-src-file').classList.toggle('hidden', tab.dataset.src !== 'file');
+  });
+});
+
+// Fetch URL
+document.getElementById('icon-url-btn').addEventListener('click', () => fetchAndShowPreview(iconUrlInput.value));
+iconUrlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') fetchAndShowPreview(iconUrlInput.value); });
+
+// File upload
+document.getElementById('icon-file-btn').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/*';
+  input.addEventListener('change', () => { if (input.files[0]) fileToPreview(input.files[0]); });
+  input.click();
+});
+
+// Filter swatches
+document.querySelectorAll('.icon-swatch').forEach(swatch => {
+  swatch.addEventListener('click', () => {
+    document.querySelectorAll('.icon-swatch').forEach(s => s.classList.remove('active'));
+    swatch.classList.add('active');
+    applyIconFilter(swatch.dataset.filter);
+  });
+});
+
+// Apply
+document.getElementById('icon-apply-btn').addEventListener('click', async () => {
+  if (!iconTargetId) return;
+  const dataURL = iconCanvas.toDataURL('image/png');
+  await setClusterIcon(iconTargetId, dataURL);
+  closeIconModal();
+});
+
+// Cancel / close
+document.getElementById('icon-cancel-btn').addEventListener('click', closeIconModal);
+document.getElementById('icon-modal-close').addEventListener('click', closeIconModal);
+iconModal.addEventListener('click', (e) => { if (e.target === iconModal) closeIconModal(); });
+
+async function setClusterIcon(id, icon) {
+  await fetch(apiURL('/api/clusters/icon'), {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id, icon }),
+  });
+  await loadClusters();
+}
 
 async function toggleHideCluster(id, hidden) {
   await fetch(apiURL('/api/clusters/hide'), {

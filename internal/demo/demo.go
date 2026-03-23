@@ -46,6 +46,8 @@ func NewServer() *http.Server {
 	mux.HandleFunc("/api/clusters/switch", okHandler)
 	mux.HandleFunc("/api/clusters/rename", okHandler)
 	mux.HandleFunc("/api/clusters/hide", okHandler)
+	mux.HandleFunc("/api/clusters/icon", okHandler)
+	mux.HandleFunc("/api/clusters/fetch-icon", cluster.HandleFetchIcon())
 	mux.HandleFunc("/api/settings", jsonHandler(config.Settings{}))
 	mux.HandleFunc("/api/settings/update", okHandler)
 	fakeLogText := buildFakeLogText()
