@@ -62,7 +62,7 @@ body {
 }
 
 .sidebar.collapsed .cluster-item.active .cluster-icon {
-  box-shadow: 0 0 0 2px #58a6ff;
+  box-shadow: 0 0 0 3px #0d1117, 0 0 0 5px #58a6ff;
 }
 
 .sidebar.collapsed .cluster-item-row {
