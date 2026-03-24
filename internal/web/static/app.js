@@ -2268,9 +2268,9 @@ document.getElementById('update-btn').addEventListener('click', async () => {
   try {
     const resp = await fetch(apiURL('/api/self-update'), { method: 'POST' });
     if (resp.ok) {
-      text.textContent = 'Update installed.';
+      text.textContent = 'Restarting...';
       btn.classList.add('hidden');
-      document.getElementById('restart-btn').classList.remove('hidden');
+      fetch(apiURL('/api/restart'), { method: 'POST' });
     } else {
       const err = await resp.text();
       text.textContent = 'Update failed: ' + err;
@@ -2282,10 +2282,6 @@ document.getElementById('update-btn').addEventListener('click', async () => {
     btn.textContent = 'Retry';
     btn.disabled = false;
   }
-});
-
-document.getElementById('restart-btn').addEventListener('click', () => {
-  fetch(apiURL('/api/restart'), { method: 'POST' });
 });
 
 document.getElementById('update-dismiss').addEventListener('click', () => {

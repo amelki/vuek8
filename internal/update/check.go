@@ -160,18 +160,26 @@ func HandleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	// Clean up
 	os.Remove(tmpDMG)
 
+	// Store the new app path for restart
+	lastUpdatedAppPath = appPath
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
 }
 
+var lastUpdatedAppPath string
+
 // HandleRestart relaunches the app.
 func HandleRestart(w http.ResponseWriter, r *http.Request) {
-	exe, err := os.Executable()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
+	appPath := lastUpdatedAppPath
+	if appPath == "" {
+		exe, err := os.Executable()
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		appPath = filepath.Dir(filepath.Dir(filepath.Dir(exe)))
 	}
-	appPath := filepath.Dir(filepath.Dir(filepath.Dir(exe)))
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "restarting"})
 
