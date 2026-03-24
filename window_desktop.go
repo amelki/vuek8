@@ -42,7 +42,7 @@ func runNativeWindow(srv *http.Server, apiURL string) {
 			wailsruntime.MessageDialog(appCtx, wailsruntime.MessageDialogOptions{
 				Type:    wailsruntime.InfoDialog,
 				Title:   "About Vue.k8",
-				Message: "Vue.k8 v" + update.Version + "\n\nA fast, lightweight Kubernetes dashboard.\nhttps://github.com/amelki/kglance",
+				Message: "Vue.k8 v" + update.Version + "\n\nA fast, lightweight Kubernetes dashboard.\nhttps://vuek8.app",
 			})
 		}
 	})
