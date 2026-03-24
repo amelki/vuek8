@@ -31,7 +31,7 @@ app: build
 	mkdir -p dist/$(APP_NAME).app/Contents/MacOS
 	mkdir -p dist/$(APP_NAME).app/Contents/Resources
 	cp $(BINARY) dist/$(APP_NAME).app/Contents/MacOS/$(BINARY)
-	cp build/Info.plist dist/$(APP_NAME).app/Contents/
+	sed 's/0\.1\.0/$(VERSION)/g' build/Info.plist > dist/$(APP_NAME).app/Contents/Info.plist
 	cp build/icon.icns dist/$(APP_NAME).app/Contents/Resources/icon.icns
 
 # Code sign the .app bundle
