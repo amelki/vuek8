@@ -35,7 +35,10 @@
           <select id="workload-select">
             <option value="">All workloads</option>
           </select>
-          <input type="text" id="pod-search" placeholder="Filter pods...">
+          <div class="search-wrapper">
+            <input type="text" id="pod-search" placeholder="Filter pods...">
+            <button id="pod-search-clear" class="search-clear hidden">&times;</button>
+          </div>
           <span id="pod-count"></span>
           <span id="refresh-indicator" title="Auto-refreshes every 3s"></span>
         </div>

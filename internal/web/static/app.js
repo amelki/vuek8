@@ -1637,7 +1637,17 @@ document.getElementById('topo-label-select').addEventListener('change', () => {
   saveSessionState();
 });
 document.getElementById('workload-group').addEventListener('change', () => { render(); saveSessionState(); });
-podSearch.addEventListener('input', () => { render(); saveSessionState(); });
+podSearch.addEventListener('input', () => {
+  document.getElementById('pod-search-clear').classList.toggle('hidden', !podSearch.value);
+  render();
+  saveSessionState();
+});
+document.getElementById('pod-search-clear').addEventListener('click', () => {
+  podSearch.value = '';
+  document.getElementById('pod-search-clear').classList.add('hidden');
+  render();
+  saveSessionState();
+});
 
 let loading = false;
 
