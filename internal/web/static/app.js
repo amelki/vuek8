@@ -2251,15 +2251,42 @@ async function checkForUpdate() {
   try {
     const info = await fetchJSON('/api/version');
     if (info.hasUpdate) {
-      const banner = document.getElementById('update-banner');
-      document.getElementById('update-text').textContent = `New version available: v${info.latest} (current: v${info.current})`;
-      document.getElementById('update-link').href = info.updateUrl;
-      banner.classList.remove('hidden');
+      document.getElementById('update-text').textContent = `New version available: v${info.latest}`;
+      document.getElementById('update-banner').classList.remove('hidden');
     }
   } catch (e) {
     // silently ignore
   }
 }
+
+document.getElementById('update-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('update-btn');
+  const text = document.getElementById('update-text');
+  btn.disabled = true;
+  btn.textContent = 'Updating...';
+  text.textContent = 'Downloading and installing update...';
+  try {
+    const resp = await fetch(apiURL('/api/self-update'), { method: 'POST' });
+    if (resp.ok) {
+      text.textContent = 'Update installed.';
+      btn.classList.add('hidden');
+      document.getElementById('restart-btn').classList.remove('hidden');
+    } else {
+      const err = await resp.text();
+      text.textContent = 'Update failed: ' + err;
+      btn.textContent = 'Retry';
+      btn.disabled = false;
+    }
+  } catch (e) {
+    text.textContent = 'Update failed: ' + e.message;
+    btn.textContent = 'Retry';
+    btn.disabled = false;
+  }
+});
+
+document.getElementById('restart-btn').addEventListener('click', () => {
+  fetch(apiURL('/api/restart'), { method: 'POST' });
+});
 
 document.getElementById('update-dismiss').addEventListener('click', () => {
   document.getElementById('update-banner').classList.add('hidden');

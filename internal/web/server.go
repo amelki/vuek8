@@ -5,11 +5,28 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
+	"runtime"
 
 	"vuek8/internal/cluster"
 	"vuek8/internal/kube"
 	"vuek8/internal/update"
 )
+
+func OpenInBrowser(url string) {
+	var cmd *exec.Cmd
+	switch runtime.GOOS {
+	case "darwin":
+		cmd = exec.Command("open", url)
+	case "linux":
+		cmd = exec.Command("xdg-open", url)
+	case "windows":
+		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
+	}
+	if cmd != nil {
+		_ = cmd.Start()
+	}
+}
 
 //go:embed static
 var StaticFiles embed.FS
@@ -49,6 +66,17 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 
 	// Version / update check
 	mux.HandleFunc("/api/version", update.HandleVersion)
+	mux.HandleFunc("/api/self-update", update.HandleSelfUpdate)
+	mux.HandleFunc("/api/restart", update.HandleRestart)
+
+	// Open URL in system browser
+	mux.HandleFunc("/api/open-url", func(w http.ResponseWriter, r *http.Request) {
+		u := r.URL.Query().Get("url")
+		if u != "" {
+			OpenInBrowser(u)
+		}
+		w.WriteHeader(http.StatusOK)
+	})
 
 	// Static files — from disk in dev mode, embedded otherwise
 	if DevMode {
