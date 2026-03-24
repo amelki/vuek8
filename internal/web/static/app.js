@@ -1434,6 +1434,11 @@ function positionTooltip(e) {
 
 // --- Tab switching ---
 
+function updateExpandToggle() {
+  const isGrouped = activeTab === 'pods' && groupSelect.value !== 'flat';
+  document.getElementById('toggle-expand').classList.toggle('hidden-ctrl', !isGrouped);
+}
+
 function switchTab(tab) {
   activeTab = tab;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
@@ -1446,6 +1451,7 @@ function switchTab(tab) {
   document.querySelectorAll('.pods-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'pods'));
   // Color mode is shared between nodes and workloads
   document.querySelectorAll('.topo-only').forEach(el => el.classList.toggle('hidden-ctrl', tab !== 'nodes' && tab !== 'workloads'));
+  updateExpandToggle();
   render();
   saveSessionState();
 }
@@ -1495,47 +1501,141 @@ document.getElementById('detail-actions-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   showPodActionsMenu(e);
 });
-document.getElementById('expand-all').addEventListener('click', () => {
-  for (const key of expanded.keys()) expanded.set(key, true);
+document.getElementById('toggle-expand').addEventListener('click', () => {
+  const btn = document.getElementById('toggle-expand');
+  const allExpanded = [...expanded.values()].every(v => v);
+  for (const key of expanded.keys()) expanded.set(key, !allExpanded);
+  btn.textContent = allExpanded ? 'Expand all' : 'Collapse all';
   renderTree();
 });
-document.getElementById('collapse-all').addEventListener('click', () => {
-  for (const key of expanded.keys()) expanded.set(key, false);
-  renderTree();
+// --- Custom picker menus ---
+let activePickerMenu = null;
+
+function closePickerMenu() {
+  if (activePickerMenu) { activePickerMenu.remove(); activePickerMenu = null; }
+}
+
+function openPickerMenu(pickerEl) {
+  closePickerMenu();
+  const selectId = pickerEl.dataset.target;
+  const select = document.getElementById(selectId);
+  if (!select) return;
+
+  const menu = document.createElement('div');
+  menu.className = 'picker-menu';
+  const rect = pickerEl.getBoundingClientRect();
+  menu.style.left = rect.left + 'px';
+  menu.style.top = (rect.bottom + 4) + 'px';
+
+  for (const opt of select.options) {
+    const item = document.createElement('div');
+    const isLabelOpt = (selectId === 'topo-group' && opt.value === 'label');
+    const isActiveLabel = select.value === 'label' && opt.value === 'label';
+    item.className = 'picker-menu-item' + (opt.value === select.value || isActiveLabel ? ' active' : '');
+
+    if (isLabelOpt) {
+      // Label option with submenu
+      item.innerHTML = opt.textContent + ' <span class="submenu-arrow">&#8250;</span>';
+      item.style.position = 'relative';
+      item.addEventListener('mouseenter', () => {
+        // Remove any existing submenu
+        const old = menu.querySelector('.picker-submenu');
+        if (old) old.remove();
+
+        const sub = document.createElement('div');
+        sub.className = 'picker-menu picker-submenu';
+        sub.style.position = 'absolute';
+        sub.style.left = (item.offsetWidth - 4) + 'px';
+        sub.style.top = '-4px';
+
+        // Populate with label keys
+        const keys = new Set();
+        for (const n of allNodes) {
+          if (n.labels) for (const k of Object.keys(n.labels)) keys.add(k);
+        }
+        const labelSelect = document.getElementById('topo-label-select');
+        const currentLabel = labelSelect ? labelSelect.value : '';
+
+        for (const k of [...keys].sort()) {
+          const subItem = document.createElement('div');
+          subItem.className = 'picker-menu-item' + (k === currentLabel && select.value === 'label' ? ' active' : '');
+          subItem.textContent = k;
+          subItem.addEventListener('click', (e) => {
+            e.stopPropagation();
+            select.value = 'label';
+            // Populate and set the label select
+            if (labelSelect) {
+              labelSelect.innerHTML = '';
+              for (const key of [...keys].sort()) {
+                const o = document.createElement('option');
+                o.value = key; o.textContent = key;
+                if (key === k) o.selected = true;
+                labelSelect.appendChild(o);
+              }
+              labelSelect.value = k;
+            }
+            select.dispatchEvent(new Event('change'));
+            pickerEl.textContent = 'Label: ' + k;
+            closePickerMenu();
+          });
+          sub.appendChild(subItem);
+        }
+        item.appendChild(sub);
+      });
+      item.addEventListener('mouseleave', (e) => {
+        // Only remove if not moving into submenu
+        setTimeout(() => {
+          const sub = item.querySelector('.picker-submenu');
+          if (sub && !sub.matches(':hover') && !item.matches(':hover')) sub.remove();
+        }, 100);
+      });
+    } else {
+      item.textContent = opt.textContent;
+      item.addEventListener('click', () => {
+        select.value = opt.value;
+        select.dispatchEvent(new Event('change'));
+        pickerEl.textContent = opt.textContent;
+        closePickerMenu();
+      });
+    }
+    menu.appendChild(item);
+  }
+
+  document.body.appendChild(menu);
+  activePickerMenu = menu;
+  setTimeout(() => document.addEventListener('click', closePickerMenu, { once: true }), 0);
+}
+
+document.querySelectorAll('.ctrl-picker').forEach(picker => {
+  picker.addEventListener('click', (e) => {
+    e.stopPropagation();
+    openPickerMenu(picker);
+  });
 });
+
+// Sync picker text when selects change programmatically
+function syncPickerText(selectId, pickerId) {
+  const select = document.getElementById(selectId);
+  const picker = document.getElementById(pickerId);
+  if (!select || !picker) return;
+  const opt = select.options[select.selectedIndex];
+  if (!opt) return;
+  picker.textContent = opt.textContent;
+}
+
 nsSelect.addEventListener('change', () => { populateWorkloads(); render(); saveSessionState(); });
 wlSelect.addEventListener('change', () => { render(); saveSessionState(); });
-groupSelect.addEventListener('change', () => { render(); saveSessionState(); });
+groupSelect.addEventListener('change', () => { updateExpandToggle(); render(); saveSessionState(); });
 document.getElementById('color-mode').addEventListener('change', () => { render(); saveSessionState(); });
 document.getElementById('topo-group').addEventListener('change', () => {
-  const mode = document.getElementById('topo-group').value;
-  const labelSelect = document.getElementById('topo-label-select');
-  if (mode === 'label') {
-    // Populate label keys from all nodes
-    const keys = new Set();
-    for (const n of allNodes) {
-      if (n.labels) {
-        for (const k of Object.keys(n.labels)) keys.add(k);
-      }
-    }
-    const sorted = [...keys].sort();
-    const current = labelSelect.value;
-    labelSelect.innerHTML = '';
-    for (const k of sorted) {
-      const opt = document.createElement('option');
-      opt.value = k;
-      opt.textContent = k;
-      if (k === current) opt.selected = true;
-      labelSelect.appendChild(opt);
-    }
-    labelSelect.classList.remove('hidden-ctrl');
-  } else {
-    labelSelect.classList.add('hidden-ctrl');
-  }
   render();
   saveSessionState();
 });
-document.getElementById('topo-label-select').addEventListener('change', () => { render(); saveSessionState(); });
+document.getElementById('topo-label-select').addEventListener('change', () => {
+  syncPickerText('topo-label-select', 'topo-label-picker');
+  render();
+  saveSessionState();
+});
 document.getElementById('workload-group').addEventListener('change', () => { render(); saveSessionState(); });
 podSearch.addEventListener('input', () => { render(); saveSessionState(); });
 
@@ -2040,6 +2140,18 @@ function restoreSessionState() {
   if (appSettings.colorMode) document.getElementById('color-mode').value = appSettings.colorMode;
   if (appSettings.topoGroup) document.getElementById('topo-group').value = appSettings.topoGroup;
   if (appSettings.listGroup) document.getElementById('group-select').value = appSettings.listGroup;
+  // Sync all picker texts
+  syncPickerText('topo-group', 'topo-group-picker');
+  syncPickerText('workload-group', 'workload-group-picker');
+  syncPickerText('color-mode', 'color-mode-picker');
+  syncPickerText('group-select', 'group-select-picker');
+  // If grouped by label, show "Label: xxx" in the picker
+  if (document.getElementById('topo-group').value === 'label') {
+    const labelVal = document.getElementById('topo-label-select').value;
+    if (labelVal) {
+      document.getElementById('topo-group-picker').textContent = 'Label: ' + labelVal;
+    }
+  }
 }
 
 function saveSessionState() {

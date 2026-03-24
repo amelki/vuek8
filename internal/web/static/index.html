@@ -51,38 +51,47 @@
           </div>
           <span id="progress-text" class="progress-text"></span>
         </div>
-        <span class="tab-sep"></span>
+      </div>
+      <div class="control-bar">
         <!-- Nodes tab controls -->
-        <select id="topo-group" class="tab-ctrl nodes-only">
-          <option value="pool">Group: Pool</option>
-          <option value="role">Group: Role</option>
-          <option value="subnet">Group: Subnet</option>
-          <option value="flat">Group: Flat</option>
-          <option value="label">Group: Label...</option>
+        <span class="ctrl-label nodes-only">Group nodes by</span>
+        <span class="ctrl-picker nodes-only" id="topo-group-picker" data-target="topo-group">Pool</span>
+        <select id="topo-group" class="ctrl-hidden-select">
+          <option value="pool">Pool</option>
+          <option value="role">Role</option>
+          <option value="subnet">Subnet</option>
+          <option value="flat">None</option>
+          <option value="label">Label...</option>
         </select>
-        <select id="topo-label-select" class="tab-ctrl hidden-ctrl"></select>
+        <select id="topo-label-select" class="ctrl-hidden-select hidden-ctrl"></select>
         <!-- Workloads tab controls -->
-        <select id="workload-group" class="tab-ctrl workloads-only hidden-ctrl">
-          <option value="kind">Group: Kind</option>
-          <option value="flat">Group: Flat</option>
-          <option value="by-kind">Cards: Kind</option>
+        <span class="ctrl-label workloads-only hidden-ctrl">Show</span>
+        <span class="ctrl-picker workloads-only hidden-ctrl" id="workload-group-picker" data-target="workload-group">Workloads by kind</span>
+        <select id="workload-group" class="ctrl-hidden-select">
+          <option value="kind">Workloads by kind</option>
+          <option value="flat">Workloads</option>
+          <option value="by-kind">Kinds</option>
         </select>
         <!-- Shared color mode (nodes + workloads) -->
-        <select id="color-mode" class="tab-ctrl topo-only">
-          <option value="status">Color: Status</option>
-          <option value="cpu">Color: CPU</option>
-          <option value="mem">Color: Memory</option>
+        <span class="ctrl-sep topo-only">&middot;</span>
+        <span class="ctrl-label topo-only">Color pods by</span>
+        <span class="ctrl-picker topo-only" id="color-mode-picker" data-target="color-mode">Status</span>
+        <select id="color-mode" class="ctrl-hidden-select">
+          <option value="status">Status</option>
+          <option value="cpu">CPU</option>
+          <option value="mem">Memory</option>
         </select>
         <!-- Pods tab controls -->
-        <select id="group-select" class="tab-ctrl pods-only hidden-ctrl">
-          <option value="flat">Flat</option>
-          <option value="node">Group by Node</option>
-          <option value="workload">Group by Workload</option>
+        <span class="ctrl-label pods-only hidden-ctrl">Group pods by</span>
+        <span class="ctrl-picker pods-only hidden-ctrl" id="group-select-picker" data-target="group-select">None</span>
+        <select id="group-select" class="ctrl-hidden-select">
+          <option value="flat">None</option>
+          <option value="node">Node</option>
+          <option value="workload">Workload</option>
           <option value="node-workload">Node / Workload</option>
           <option value="workload-node">Workload / Node</option>
         </select>
-        <button id="expand-all" class="tab-ctrl pods-only hidden-ctrl" title="Expand all">&#9660;</button>
-        <button id="collapse-all" class="tab-ctrl pods-only hidden-ctrl" title="Collapse all">&#9654;</button>
+        <button id="toggle-expand" class="ctrl-picker pods-only hidden-ctrl">Expand all</button>
       </div>
       <main>
         <div id="nodes-view" class="view"></div>
