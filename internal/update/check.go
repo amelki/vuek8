@@ -87,14 +87,14 @@ func HandleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	// exe is like /Applications/VueK8.app/Contents/MacOS/vuek8
-	appPath := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // → /Applications/VueK8.app
+	// exe is like /Applications/Vue.k8.app/Contents/MacOS/vuek8
+	appPath := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // → /Applications/Vue.k8.app
 	if !strings.HasSuffix(appPath, ".app") {
 		http.Error(w, "not running from a .app bundle", http.StatusBadRequest)
 		return
 	}
 
-	dmgName := fmt.Sprintf("VueK8-%s.dmg", info.Latest)
+	dmgName := fmt.Sprintf("Vue.k8-%s.dmg", info.Latest)
 	dmgURL := fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", GitHubRepo, info.Latest, dmgName)
 
 	// Download DMG
@@ -137,14 +137,14 @@ func HandleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	if mountPoint == "" {
-		mountPoint = "/Volumes/VueK8"
+		mountPoint = "/Volumes/Vue.k8"
 	}
 	defer exec.Command("hdiutil", "detach", mountPoint, "-quiet").Run()
 
 	// Replace app
-	srcApp := filepath.Join(mountPoint, "VueK8.app")
+	srcApp := filepath.Join(mountPoint, "Vue.k8.app")
 	if _, err := os.Stat(srcApp); err != nil {
-		http.Error(w, "VueK8.app not found in DMG", http.StatusInternalServerError)
+		http.Error(w, "Vue.k8.app not found in DMG", http.StatusInternalServerError)
 		return
 	}
 	// Remove old app and copy new one

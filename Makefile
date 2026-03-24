@@ -1,6 +1,6 @@
 BINARY=vuek8
 VERSION?=0.1.0
-APP_NAME=VueK8
+APP_NAME=Vue.k8
 LDFLAGS=-s -w -X vuek8/internal/update.Version=$(VERSION)
 S3_BUCKET=vuek8-releases
 AWS_PROFILE=vuek8
