@@ -81,18 +81,20 @@ func HandleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find current app path
+	// Find current app path — resolve symlinks
 	exe, err := os.Executable()
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	exe, _ = filepath.EvalSymlinks(exe)
 	// exe is like /Applications/Vue.k8.app/Contents/MacOS/vuek8
 	appPath := filepath.Dir(filepath.Dir(filepath.Dir(exe))) // → /Applications/Vue.k8.app
 	if !strings.HasSuffix(appPath, ".app") {
 		http.Error(w, "not running from a .app bundle", http.StatusBadRequest)
 		return
 	}
+	appDir := filepath.Dir(appPath) // → /Applications
 
 	dmgName := fmt.Sprintf("Vue.k8-%s.dmg", info.Latest)
 	dmgURL := fmt.Sprintf("https://github.com/%s/releases/download/v%s/%s", GitHubRepo, info.Latest, dmgName)
@@ -122,46 +124,59 @@ func HandleSelfUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	f.Close()
 
-	// Mount DMG
-	mountOut, err := exec.Command("hdiutil", "attach", tmpDMG, "-nobrowse", "-quiet").Output()
+	// Mount DMG — without -quiet so we get the mount point
+	mountOut, err := exec.Command("hdiutil", "attach", tmpDMG, "-nobrowse").CombinedOutput()
 	if err != nil {
-		http.Error(w, "mount failed: "+err.Error(), http.StatusInternalServerError)
+		http.Error(w, "mount failed: "+err.Error()+": "+string(mountOut), http.StatusInternalServerError)
 		return
 	}
-	// Find mount point
+	// Find mount point from output (last line, last field group)
 	mountPoint := ""
 	for _, line := range strings.Split(string(mountOut), "\n") {
-		fields := strings.Fields(line)
-		if len(fields) >= 3 {
-			mountPoint = strings.Join(fields[2:], " ")
+		if strings.Contains(line, "/Volumes/") {
+			idx := strings.Index(line, "/Volumes/")
+			mountPoint = strings.TrimSpace(line[idx:])
 		}
 	}
 	if mountPoint == "" {
-		mountPoint = "/Volumes/Vue.k8"
+		http.Error(w, "could not determine mount point", http.StatusInternalServerError)
+		return
 	}
-	defer exec.Command("hdiutil", "detach", mountPoint, "-quiet").Run()
+	defer exec.Command("hdiutil", "detach", mountPoint, "-quiet", "-force").Run()
 
-	// Replace app
-	srcApp := filepath.Join(mountPoint, "Vue.k8.app")
-	if _, err := os.Stat(srcApp); err != nil {
-		http.Error(w, "Vue.k8.app not found in DMG", http.StatusInternalServerError)
+	// Find the .app in the mounted DMG
+	srcApp := ""
+	entries, _ := os.ReadDir(mountPoint)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".app") {
+			srcApp = filepath.Join(mountPoint, e.Name())
+			break
+		}
+	}
+	if srcApp == "" {
+		http.Error(w, "no .app found in DMG", http.StatusInternalServerError)
 		return
 	}
-	// Remove old app and copy new one
-	if err := os.RemoveAll(appPath); err != nil {
-		http.Error(w, "failed to remove old app: "+err.Error(), http.StatusInternalServerError)
+
+	// Remove old app and copy new one to the same directory
+	newAppPath := filepath.Join(appDir, filepath.Base(srcApp))
+	// If the name changed (e.g. VueK8.app → Vue.k8.app), remove old one too
+	if newAppPath != appPath {
+		os.RemoveAll(appPath)
+	}
+	os.RemoveAll(newAppPath)
+	if out, err := exec.Command("cp", "-R", srcApp, newAppPath).CombinedOutput(); err != nil {
+		http.Error(w, "failed to copy new app: "+err.Error()+": "+string(out), http.StatusInternalServerError)
 		return
 	}
-	if err := exec.Command("cp", "-R", srcApp, appPath).Run(); err != nil {
-		http.Error(w, "failed to copy new app: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
+	// Ensure the copy is flushed to disk
+	exec.Command("sync").Run()
 
 	// Clean up
 	os.Remove(tmpDMG)
 
 	// Store the new app path for restart
-	lastUpdatedAppPath = appPath
+	lastUpdatedAppPath = newAppPath
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "ready"})
