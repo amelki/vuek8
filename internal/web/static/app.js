@@ -300,9 +300,10 @@ function renderTree() {
 }
 
 function renderFlat(pods) {
+  const sorted = sortPods(pods);
   let html = podTableHeader();
   html += `<div class="flat-list">`;
-  for (const p of pods) {
+  for (const p of sorted) {
     html += podRow(p, true);
   }
   html += `</div>`;
@@ -498,15 +499,65 @@ function isExpanded(key) {
 // Status: ~"ContainerCreating" = ~120px
 // Ready, Restarts, Age, Tag: ~10 chars monospace = 85px each
 const columns = [
-  { name: 'Namespace', min: 120 },
-  { name: 'Name', min: 100, flex: true },
-  { name: 'Containers', min: 105, align: 'right' },
-  { name: 'Status', min: 120, align: 'right' },
-  { name: 'Ready', min: 85, align: 'right' },
-  { name: 'Restarts', min: 95, align: 'right' },
-  { name: 'Age', min: 85, align: 'right' },
-  { name: 'Tag', min: 85, align: 'right' },
+  { name: 'Namespace', min: 120, key: 'namespace' },
+  { name: 'Name', min: 100, flex: true, key: 'name' },
+  { name: 'Containers', min: 105, align: 'right', key: 'containers' },
+  { name: 'Status', min: 120, align: 'right', key: 'status' },
+  { name: 'Ready', min: 85, align: 'right', key: 'ready' },
+  { name: 'Restarts', min: 95, align: 'right', key: 'restarts' },
+  { name: 'Age', min: 85, align: 'right', key: 'age' },
+  { name: 'Tag', min: 85, align: 'right', key: 'tag' },
 ];
+
+let sortCol = null; // column key
+let sortAsc = true;
+
+function parseAge(age) {
+  if (!age) return 0;
+  let total = 0;
+  const parts = age.match(/(\d+)(y|d|h|m|s)/g);
+  if (!parts) return 0;
+  for (const p of parts) {
+    const n = parseInt(p);
+    const unit = p.slice(-1);
+    switch (unit) {
+      case 'y': total += n * 365 * 86400; break;
+      case 'd': total += n * 86400; break;
+      case 'h': total += n * 3600; break;
+      case 'm': total += n * 60; break;
+      case 's': total += n; break;
+    }
+  }
+  return total;
+}
+
+function sortPods(pods) {
+  if (!sortCol) return pods;
+  const sorted = [...pods];
+  sorted.sort((a, b) => {
+    let va, vb;
+    switch (sortCol) {
+      case 'namespace': va = a.namespace; vb = b.namespace; break;
+      case 'name': va = a.name; vb = b.name; break;
+      case 'containers': va = (a.containers || []).length; vb = (b.containers || []).length; break;
+      case 'status': va = a.status; vb = b.status; break;
+      case 'ready': va = a.ready; vb = b.ready; break;
+      case 'restarts': va = a.restarts; vb = b.restarts; break;
+      case 'age': va = parseAge(a.age); vb = parseAge(b.age); break;
+      case 'tag':
+        va = (a.containers && a.containers.length > 0) ? a.containers[0].tag : '';
+        vb = (b.containers && b.containers.length > 0) ? b.containers[0].tag : '';
+        break;
+      default: return 0;
+    }
+    if (typeof va === 'string') {
+      const cmp = va.localeCompare(vb);
+      return sortAsc ? cmp : -cmp;
+    }
+    return sortAsc ? va - vb : vb - va;
+  });
+  return sorted;
+}
 
 function gridTemplateFromColumns() {
   return columns.map(c => c.flex ? '1fr' : (c.width || c.min) + 'px').join(' ');
@@ -517,7 +568,10 @@ function podTableHeader() {
   let h = `<div class="pod-table-header" style="grid-template-columns: ${tpl}">`;
   columns.forEach((col, i) => {
     const align = col.align === 'right' ? ' style="text-align:right"' : '';
-    h += `<span class="col-header" data-col="${i}"${align}>${esc(col.name)}`;
+    const isSorted = sortCol === col.key;
+    const arrow = isSorted ? (sortAsc ? ' &#9650;' : ' &#9660;') : '';
+    const sortClass = isSorted ? ' sorted' : '';
+    h += `<span class="col-header${sortClass}" data-col="${i}" data-sort-key="${col.key}"${align}>${esc(col.name)}${arrow}`;
     h += `<span class="col-resize" data-col="${i}"></span>`;
     h += `</span>`;
   });
@@ -1087,6 +1141,50 @@ function getColorMode() {
   return document.getElementById('color-mode').value;
 }
 
+// Compute aggregated node utilization from pod metrics
+function getNodeUtilization(nodeName) {
+  let cpuMilli = 0, memBytes = 0;
+  for (const p of allPods) {
+    if (p.node !== nodeName) continue;
+    const key = p.namespace + '/' + p.name;
+    const m = allMetrics[key];
+    if (m) {
+      cpuMilli += m.cpuMilli || 0;
+      memBytes += m.memBytes || 0;
+    }
+  }
+  return { cpuMilli, memBytes };
+}
+
+function resourceBgColor(pct) {
+  if (pct < 15) return 'background: rgba(63, 185, 80, 0.08);';
+  if (pct < 40) return 'background: rgba(63, 185, 80, 0.18);';
+  if (pct < 65) return 'background: rgba(210, 153, 34, 0.18);';
+  if (pct < 85) return 'background: rgba(218, 109, 40, 0.22);';
+  return 'background: rgba(248, 81, 73, 0.25);';
+}
+
+function nodeCardStyle(node) {
+  const mode = getColorMode();
+  if (!mode.startsWith('node-')) return '';
+
+  if (mode === 'node-status') {
+    if (node.status !== 'Ready') return 'background: rgba(248, 81, 73, 0.25);';
+    return 'background: rgba(63, 185, 80, 0.18);';
+  }
+
+  const util = getNodeUtilization(node.name);
+  const cpuCap = parseInt(node.cpuCapacity) * 1000;
+  const memMatch = node.memoryCapacity.match(/([\d.]+)Gi/);
+  const memCap = memMatch ? parseFloat(memMatch[1]) * 1024 * 1024 * 1024 : 0;
+
+  let pct = 0;
+  if (mode === 'node-cpu' && cpuCap > 0) pct = (util.cpuMilli / cpuCap) * 100;
+  if (mode === 'node-mem' && memCap > 0) pct = (util.memBytes / memCap) * 100;
+
+  return resourceBgColor(pct);
+}
+
 function getNodeCPUMilli(nodeName) {
   const node = allNodes.find(n => n.name === nodeName);
   if (!node) return 0;
@@ -1128,12 +1226,14 @@ function resourceColor(pct) {
 
 function dotStyle(p) {
   const mode = getColorMode();
-  if (mode === 'status') return '';
+  if (mode === 'pod-status') return '';
+  // Node color modes → pods in grayscale
+  if (mode.startsWith('node-')) return 'background: #484f58; opacity: 0.5;';
   const key = p.namespace + '/' + p.name;
   const m = allMetrics[key];
   if (!m) return 'background: #21262d;';
 
-  if (mode === 'cpu') {
+  if (mode === 'pod-cpu') {
     const limit = p.cpuLimitMilli || 0;
     if (limit > 0) return resourceColor((m.cpuMilli / limit) * 100);
     const nodeCPU = getNodeCPUMilli(p.node);
@@ -1141,7 +1241,7 @@ function dotStyle(p) {
     return 'background: #21262d;';
   }
 
-  if (mode === 'mem') {
+  if (mode === 'pod-mem') {
     const limit = p.memLimitBytes || 0;
     if (limit > 0) return resourceColor((m.memBytes / limit) * 100);
     const nodeMem = getNodeMemBytes(p.node);
@@ -1183,7 +1283,7 @@ function renderTopologyByNodes(filtered, filter) {
     for (const n of nodes) {
       const pods = podsByNode.get(n.name) || [];
       if (filter && pods.length === 0) continue;
-      html += `<div class="topo-machine ${n.status !== 'Ready' ? 'not-ready' : ''}">`;
+      html += `<div class="topo-machine" style="${nodeCardStyle(n)}">`;
       html += `<div class="topo-machine-header">`;
       html += `<span class="topo-machine-name">${esc(n.name)}</span>`;
       html += `<span class="topo-machine-stats">${pods.length}</span>`;
@@ -1487,6 +1587,20 @@ function attachListeners() {
       const id = el.dataset.expandDots;
       if (expandedContainers.has(id)) expandedContainers.delete(id);
       else expandedContainers.add(id);
+      renderTree();
+    });
+  });
+  // Column header sort
+  tree.querySelectorAll('.col-header[data-sort-key]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      if (e.target.classList.contains('col-resize')) return; // don't sort on resize drag
+      const key = el.dataset.sortKey;
+      if (sortCol === key) {
+        sortAsc = !sortAsc;
+      } else {
+        sortCol = key;
+        sortAsc = true;
+      }
       renderTree();
     });
   });

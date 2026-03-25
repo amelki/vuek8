@@ -540,7 +540,7 @@ header h1 {
 
 .ctrl-label {
   font-size: 12px;
-  color: #6e7681;
+  color: #484f58;
   font-weight: 400;
   white-space: nowrap;
 }
@@ -564,15 +564,15 @@ header h1 {
 
 .ctrl-picker {
   font-size: 12px;
-  font-weight: 600;
-  color: #c9d1d9;
+  font-weight: 400;
+  color: #8b949e;
   cursor: pointer;
   white-space: nowrap;
   position: relative;
 }
 
 .ctrl-picker:hover {
-  color: #58a6ff;
+  color: #c9d1d9;
 }
 
 .ctrl-picker.hidden-ctrl { display: none !important; }
@@ -987,10 +987,15 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
+  cursor: pointer;
 }
 
 .pod-table-header .col-header:hover {
   background: #21262d;
+}
+
+.pod-table-header .col-header.sorted {
+  color: #c9d1d9;
 }
 
 /* Resize handle */

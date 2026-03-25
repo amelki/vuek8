@@ -335,13 +335,23 @@ func formatAge(t time.Time) string {
 	d := time.Since(t)
 	switch {
 	case d < time.Minute:
-		return fmt.Sprintf("%3ds", int(d.Seconds()))
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	case d < 10*time.Minute:
+		m := int(d.Minutes())
+		s := int(d.Seconds()) % 60
+		return fmt.Sprintf("%dm%ds", m, s)
 	case d < time.Hour:
-		return fmt.Sprintf("%3dm", int(d.Minutes()))
+		return fmt.Sprintf("%dm", int(d.Minutes()))
 	case d < 24*time.Hour:
-		return fmt.Sprintf("%3dh", int(d.Hours()))
+		h := int(d.Hours())
+		m := int(d.Minutes()) % 60
+		return fmt.Sprintf("%dh%dm", h, m)
+	case d < 365*24*time.Hour:
+		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	default:
-		return fmt.Sprintf("%3dd", int(d.Hours()/24))
+		y := int(d.Hours() / 24 / 365)
+		dd := int(d.Hours()/24) % 365
+		return fmt.Sprintf("%dy%dd", y, dd)
 	}
 }
 
