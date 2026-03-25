@@ -46,6 +46,9 @@ func runNativeWindow(srv *http.Server, apiURL string) {
 			})
 		}
 	})
+	kglanceMenu.AddText("Visit Website", nil, func(_ *menu.CallbackData) {
+		wailsruntime.BrowserOpenURL(appCtx, "https://vuek8.app")
+	})
 	kglanceMenu.AddSeparator()
 	kglanceMenu.AddText("Quit Vue.k8", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 		wailsruntime.Quit(appCtx)
