@@ -1739,6 +1739,42 @@ main {
 .topo-dot-terminating { background: #d29922; }
 .topo-dot-unknown { background: #8b949e; }
 
+/* Pod animations */
+
+.topo-dot-new {
+  animation: pod-glow-in 1.5s ease-out;
+}
+
+.topo-dot-changed {
+  animation: pod-status-change 0.8s ease-out;
+}
+
+@keyframes pod-glow-in {
+  0% {
+    box-shadow: 0 0 8px 3px rgba(88, 166, 255, 0.8);
+    transform: scale(1.4);
+  }
+  50% {
+    box-shadow: 0 0 4px 1px rgba(88, 166, 255, 0.4);
+    transform: scale(1.1);
+  }
+  100% {
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+
+@keyframes pod-status-change {
+  0% {
+    box-shadow: 0 0 6px 2px rgba(255, 255, 255, 0.6);
+    transform: scale(1.3);
+  }
+  100% {
+    box-shadow: none;
+    transform: scale(1);
+  }
+}
+
 /* Masonry layout for workload/namespace grouping */
 .topo-masonry {
   display: flex;

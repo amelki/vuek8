@@ -19,6 +19,7 @@ let activeTab = 'nodes';
 let allNodes = [];
 let allPods = [];
 let allMetrics = {}; // key: "namespace/podName" -> { cpuMilli, memBytes }
+let prevPodState = new Map(); // key: "namespace/podName" -> status (for animation tracking)
 let clusters = [];
 // Track expand state for group headers (keyed by group path)
 const expanded = new Map();
@@ -196,7 +197,13 @@ async function loadDataQuiet() {
     fetchJSON('/api/metrics'),
   ]);
   if (nodesResult.status === 'fulfilled') allNodes = nodesResult.value;
-  if (podsResult.status === 'fulfilled') allPods = podsResult.value;
+  if (podsResult.status === 'fulfilled') {
+    if (allPods.length > 0) {
+      snapshotPodState();
+      animEnabled = true;
+    }
+    allPods = podsResult.value;
+  }
   if (metricsResult.status === 'fulfilled' && metricsResult.value) {
     allMetrics = {};
     for (const pm of metricsResult.value) {
@@ -1137,6 +1144,30 @@ function dotClass(status) {
   return 'topo-dot topo-dot-' + (known.includes(s) ? s : 'unknown');
 }
 
+let animEnabled = false; // skip animations on first load / cluster switch
+
+function dotAnim(p) {
+  if (!animEnabled) return '';
+  const key = p.namespace + '/' + p.name;
+  const prev = prevPodState.get(key);
+  if (prev === undefined) {
+    console.log('NEW pod:', p.workloadName, p.name, p.status);
+    return ' topo-dot-new';
+  }
+  if (prev !== p.status) {
+    console.log('CHANGED pod:', p.workloadName, p.name, prev, '→', p.status);
+    return ' topo-dot-changed';
+  }
+  return '';
+}
+
+function snapshotPodState() {
+  prevPodState = new Map();
+  for (const p of allPods) {
+    prevPodState.set(p.namespace + '/' + p.name, p.status);
+  }
+}
+
 function getColorMode() {
   return document.getElementById('color-mode').value;
 }
@@ -1291,7 +1322,7 @@ function renderTopologyByNodes(filtered, filter) {
       html += `<div class="topo-machine-resources">${esc(n.cpuCapacity)} CPU &middot; ${esc(n.memoryCapacity)}</div>`;
       html += `<div class="topo-pods">`;
       for (const p of pods) {
-        html += `<div class="${dotClass(p.status)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+        html += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
       }
       html += `</div>`;
       html += `</div>`;
@@ -1348,7 +1379,7 @@ function renderTopologyByPods(filtered, filter, mode) {
     h += `<div class="topo-machine-resources">${kindLabel ? esc(kindLabel) + ' &middot; ' : ''}${running} running${notRunning > 0 ? ' · ' + notRunning + ' unhealthy' : ''}</div>`;
     h += `<div class="topo-pods">`;
     for (const p of pods) {
-      h += `<div class="${dotClass(p.status)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+      h += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
     }
     h += `</div></div>`;
     return h;
@@ -1948,6 +1979,8 @@ async function switchCluster(id) {
     showProgress(0, 'Switching cluster...');
     allNodes = [];
     allPods = [];
+    animEnabled = false;
+    prevPodState.clear();
     render();
 
     await fetch(apiURL('/api/clusters/switch'), {
