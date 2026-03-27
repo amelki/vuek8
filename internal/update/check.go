@@ -201,7 +201,10 @@ func HandleRestart(w http.ResponseWriter, r *http.Request) {
 	// Launch new app and quit current
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		exec.Command("open", appPath).Start()
+		// Use 'open' which returns after the app is launched
+		cmd := exec.Command("open", "-n", "-a", appPath)
+		cmd.Run() // wait for open to finish launching
+		time.Sleep(2 * time.Second)
 		os.Exit(0)
 	}()
 }
