@@ -1,6 +1,8 @@
 package demo
 
 import (
+	_ "embed"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/fs"
@@ -114,24 +116,42 @@ func (r *rng) hex(n int) string {
 	return string(b)
 }
 
+// --- demo icons (embedded PNGs) ---
+
+//go:embed demo-icon-prod.png
+var demoIconProdPNG []byte
+
+//go:embed demo-icon-staging.png
+var demoIconStagingPNG []byte
+
+func demoIconDataURL(data []byte) string {
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(data)
+}
+
 // --- clusters ---
 
 func buildClusters() []cluster.ClusterInfo {
+	prodIcon := demoIconDataURL(demoIconProdPNG)
+	stagingIcon := demoIconDataURL(demoIconStagingPNG)
+
 	return []cluster.ClusterInfo{
 		{
-			ID: "prod-eu", DisplayName: "arctis-prod-eu",
+			ID: "prod-eu", DisplayName: "Arctis Prod EU",
 			ContextName: "arctis-prod-eu", Server: "https://k8s.eu.arctis.io:6443",
 			FilePath: "/home/deploy/.kube/arctis-prod.yaml", Active: true, IsDefault: true,
+			Icon: prodIcon,
 		},
 		{
-			ID: "prod-us", DisplayName: "arctis-prod-us",
+			ID: "prod-us", DisplayName: "Arctis Prod US",
 			ContextName: "arctis-prod-us", Server: "https://k8s.us.arctis.io:6443",
-			FilePath: "/home/deploy/.kube/arctis-prod.yaml",
+			FilePath: "/home/deploy/.kube/arctis-prod.yaml", IsDefault: true,
+			Icon: prodIcon,
 		},
 		{
-			ID: "staging", DisplayName: "arctis-staging",
+			ID: "staging", DisplayName: "Arctis Staging",
 			ContextName: "arctis-staging", Server: "https://k8s.staging.arctis.io:6443",
 			FilePath: "/home/deploy/.kube/arctis-staging.yaml", IsDefault: true,
+			Icon: stagingIcon,
 		},
 	}
 }

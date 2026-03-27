@@ -20,6 +20,8 @@ let allNodes = [];
 let allPods = [];
 let allMetrics = {}; // key: "namespace/podName" -> { cpuMilli, memBytes }
 let prevPodState = new Map(); // key: "namespace/podName" -> status (for animation tracking)
+let searchCaseSensitive = false;
+let searchRegex = false;
 let clusters = [];
 // Track expand state for group headers (keyed by group path)
 const expanded = new Map();
@@ -241,15 +243,29 @@ function workloadKey(p) {
 
 // --- Rendering ---
 
+function matchesSearch(name, filter) {
+  if (!filter) return true;
+  if (searchRegex) {
+    try {
+      const flags = searchCaseSensitive ? '' : 'i';
+      return new RegExp(filter, flags).test(name);
+    } catch (e) {
+      return false; // invalid regex, show nothing
+    }
+  }
+  if (searchCaseSensitive) return name.includes(filter);
+  return name.toLowerCase().includes(filter.toLowerCase());
+}
+
 function getFilteredPods() {
   const ns = nsSelect.value;
   const wl = wlSelect.value;
-  const filter = podSearch.value.toLowerCase();
+  const filter = podSearch.value;
 
   let filtered = allPods;
   if (ns) filtered = filtered.filter(p => p.namespace === ns);
   if (wl) filtered = filtered.filter(p => (p.workloadKind + '/' + (p.workloadName || p.name)) === wl);
-  if (filter) filtered = filtered.filter(p => p.name.toLowerCase().includes(filter));
+  if (filter) filtered = filtered.filter(p => matchesSearch(p.name, filter));
 
   podCount.textContent = `${filtered.length} pods`;
   return filtered;
@@ -1792,6 +1808,16 @@ document.getElementById('pod-search-clear').addEventListener('click', () => {
   document.getElementById('pod-search-clear').classList.add('hidden');
   render();
   saveSessionState();
+});
+document.getElementById('search-case').addEventListener('click', () => {
+  searchCaseSensitive = !searchCaseSensitive;
+  document.getElementById('search-case').classList.toggle('active', searchCaseSensitive);
+  render();
+});
+document.getElementById('search-regex').addEventListener('click', () => {
+  searchRegex = !searchRegex;
+  document.getElementById('search-regex').classList.toggle('active', searchRegex);
+  render();
 });
 
 let loading = false;

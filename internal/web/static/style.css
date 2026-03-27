@@ -705,6 +705,28 @@ header h1 {
   padding-right: 24px;
 }
 
+.search-toggle {
+  background: transparent;
+  border: none;
+  color: #484f58;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.search-toggle:hover {
+  color: #8b949e;
+}
+
+.search-toggle.active {
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.1);
+}
+
 .search-clear {
   position: absolute;
   right: 4px;
