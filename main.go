@@ -19,13 +19,12 @@ func main() {
 	kubeconfig := flag.String("kubeconfig", "", "path to kubeconfig file (default: auto-discover from ~/.kube/)")
 	browserMode := flag.Bool("browser", false, "open in browser instead of native window")
 	demoMode := flag.Bool("demo", false, "run with sample data (no real cluster needed)")
-	demoRollout := flag.Bool("demo-rollout", false, "simulate a rollout in demo mode")
 	noTelemetry := flag.Bool("no-telemetry", false, "disable anonymous usage telemetry")
 	flag.Parse()
 
 	var srv *http.Server
 	if *demoMode {
-		srv = demo.NewServer(*demoRollout)
+		srv = demo.NewServer()
 	} else {
 		mgr, err := cluster.NewManager(*kubeconfig)
 		if err != nil {

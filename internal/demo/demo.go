@@ -18,7 +18,7 @@ import (
 	"vuek8/internal/web"
 )
 
-func NewServer(rollout bool) *http.Server {
+func NewServer() *http.Server {
 	mux := http.NewServeMux()
 
 	clusters := buildClusters()
@@ -26,13 +26,27 @@ func NewServer(rollout bool) *http.Server {
 	nodes := buildNodes()
 
 	state := &demoState{
-		pods: buildPods(),
+		pods:            buildPods(),
+		rollingWorkload: "",
 	}
 	state.metrics = buildMetrics(state.pods)
+	state.workloads = state.buildWorkloadStatuses()
 
-	if rollout {
-		go state.simulateRollout()
-	}
+	// Rollout controlled via /api/demo/rollout/toggle (POST to toggle, GET to check)
+	mux.HandleFunc("/api/demo/rollout/toggle", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" {
+			state.mu.Lock()
+			if state.rolloutRunning {
+				state.rolloutStop = true
+			} else {
+				state.rolloutStop = false
+				go state.simulateRollout()
+			}
+			state.mu.Unlock()
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Write([]byte(`{"ok":true}`))
+	})
 
 	jsonHandler := func(v any) http.HandlerFunc {
 		return func(w http.ResponseWriter, r *http.Request) {
@@ -59,6 +73,12 @@ func NewServer(rollout bool) *http.Server {
 		state.mu.RLock()
 		defer state.mu.RUnlock()
 		json.NewEncoder(w).Encode(state.metrics)
+	})
+	mux.HandleFunc("/api/workloads", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		state.mu.RLock()
+		defer state.mu.RUnlock()
+		json.NewEncoder(w).Encode(state.workloads)
 	})
 	mux.HandleFunc("/api/progress", jsonHandler(kube.Progress{Ready: true}))
 	mux.HandleFunc("/api/version", update.HandleVersion)
@@ -470,9 +490,69 @@ func buildMetrics(pods []kube.PodInfo) []kube.PodMetrics {
 // --- Rollout simulation ---
 
 type demoState struct {
-	mu      sync.RWMutex
-	pods    []kube.PodInfo
-	metrics []kube.PodMetrics
+	mu               sync.RWMutex
+	pods             []kube.PodInfo
+	metrics          []kube.PodMetrics
+	workloads        []kube.WorkloadStatus
+	rollingWorkload  string  // name of workload currently rolling out
+	rolloutTotal     int32   // total pods to roll
+	rolloutProgress  float64 // 0.0 to 1.0, advances smoothly
+	rolloutRunning   bool   // is a rollout goroutine active
+	rolloutStop      bool   // signal to stop the rollout
+}
+
+func (s *demoState) buildWorkloadStatuses() []kube.WorkloadStatus {
+	// Count pods per workload
+	type wlInfo struct {
+		kind    string
+		ns      string
+		total   int32
+		ready   int32
+		updated int32
+	}
+	wls := map[string]*wlInfo{}
+	for _, p := range s.pods {
+		key := p.WorkloadName
+		if key == "" {
+			continue
+		}
+		w, ok := wls[key]
+		if !ok {
+			w = &wlInfo{kind: p.WorkloadKind, ns: p.Namespace}
+			wls[key] = w
+		}
+		w.total++
+		if p.Status == "Running" {
+			w.ready++
+			w.updated++
+		}
+	}
+
+	var statuses []kube.WorkloadStatus
+	for name, w := range wls {
+		status := "stable"
+		if name == s.rollingWorkload {
+			status = "progressing"
+			w.updated = int32(s.rolloutProgress * float64(s.rolloutTotal))
+			w.total = s.rolloutTotal
+		} else if w.ready < w.total && w.total > 0 {
+			// Some pods not ready but not actively rolling
+			if w.ready == 0 {
+				status = "degraded"
+			}
+		}
+		statuses = append(statuses, kube.WorkloadStatus{
+			Name:              name,
+			Namespace:         w.ns,
+			Kind:              w.kind,
+			Replicas:          w.total,
+			ReadyReplicas:     w.ready,
+			UpdatedReplicas:   w.updated,
+			AvailableReplicas: w.ready,
+			RolloutStatus:     status,
+		})
+	}
+	return statuses
 }
 
 func (s *demoState) findRunningIndices(workloadName string) []int {
@@ -486,12 +566,42 @@ func (s *demoState) findRunningIndices(workloadName string) []int {
 }
 
 func (s *demoState) simulateRollout() {
-	// Wait 10 seconds for the UI to load
-	time.Sleep(10 * time.Second)
+	s.mu.Lock()
+	s.rolloutRunning = true
+	s.mu.Unlock()
+
+	defer func() {
+		s.mu.Lock()
+		s.rolloutRunning = false
+		s.rollingWorkload = ""
+		s.workloads = s.buildWorkloadStatuses()
+		s.mu.Unlock()
+	}()
 
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 
+	shouldStop := func() bool {
+		s.mu.RLock()
+		defer s.mu.RUnlock()
+		return s.rolloutStop
+	}
+
+	sleepOrStop := func(d time.Duration) bool {
+		// Sleep in small increments to respond to stop quickly
+		end := time.Now().Add(d)
+		for time.Now().Before(end) {
+			if shouldStop() {
+				return true
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+		return shouldStop()
+	}
+
 	for {
+		if shouldStop() {
+			return
+		}
 		// Find a workload with enough pods
 		s.mu.RLock()
 		counts := map[string]int{}
@@ -509,6 +619,14 @@ func (s *demoState) simulateRollout() {
 		}
 		total := counts[wlName]
 		fmt.Printf("demo: rolling out %s (%d pods)\n", wlName, total)
+
+		// Mark rollout in progress
+		s.mu.Lock()
+		s.rollingWorkload = wlName
+		s.rolloutTotal = int32(total)
+		s.rolloutProgress = 0
+		s.workloads = s.buildWorkloadStatuses()
+		s.mu.Unlock()
 
 		// Collect running pods to roll
 		s.mu.RLock()
@@ -542,10 +660,13 @@ func (s *demoState) simulateRollout() {
 				newNames[i] = wlName + "-" + fmt.Sprintf("%05x", r.Intn(0xfffff)) + "-" + fmt.Sprintf("%05x", r.Intn(0xfffff))
 			}
 
+			batchFraction := float64(batch) / float64(total)
+
 			// Step 1: Add new ContainerCreating pods (card grows)
 			s.mu.Lock()
+			s.rolloutProgress += batchFraction * 0.33
 			for i, newName := range newNames {
-				_ = batchNames[i] // just to keep in sync
+				_ = batchNames[i]
 				s.pods = append(s.pods, kube.PodInfo{
 					Name:            newName,
 					Namespace:       template.Namespace,
@@ -563,11 +684,13 @@ func (s *demoState) simulateRollout() {
 				})
 			}
 			s.metrics = buildMetrics(s.pods)
+			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
-			time.Sleep(4 * time.Second)
+			if sleepOrStop(4 * time.Second) { return }
 
 			// Step 2: New pods → Running, old pods → Terminating
 			s.mu.Lock()
+			s.rolloutProgress += batchFraction * 0.33
 			newNameSet := map[string]bool{}
 			oldNameSet := map[string]bool{}
 			for _, n := range newNames {
@@ -589,11 +712,14 @@ func (s *demoState) simulateRollout() {
 				}
 			}
 			s.metrics = buildMetrics(s.pods)
+			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
-			time.Sleep(4 * time.Second)
+			if sleepOrStop(4 * time.Second) { return }
 
-			// Step 3: Remove old pods
+			// Step 3: Remove old pods, advance progress
 			s.mu.Lock()
+			s.rolloutProgress += batchFraction * 0.34
+			if s.rolloutProgress > 1 { s.rolloutProgress = 1 }
 			newPods := make([]kube.PodInfo, 0, len(s.pods)-batch)
 			for _, p := range s.pods {
 				if !oldNameSet[p.Name] {
@@ -602,13 +728,19 @@ func (s *demoState) simulateRollout() {
 			}
 			s.pods = newPods
 			s.metrics = buildMetrics(s.pods)
+			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
 
-			time.Sleep(4 * time.Second)
+			if sleepOrStop(4 * time.Second) { return }
 		}
 
+		// Mark rollout complete
+		s.mu.Lock()
+		s.rollingWorkload = ""
+		s.workloads = s.buildWorkloadStatuses()
+		s.mu.Unlock()
 		fmt.Printf("demo: rollout of %s complete\n", wlName)
-		time.Sleep(20 * time.Second)
+		return // one rollout per trigger
 	}
 }
 

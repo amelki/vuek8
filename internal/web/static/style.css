@@ -1676,9 +1676,7 @@ main {
   font-size: 13px;
   font-weight: 600;
   color: #8b949e;
-  padding: 4px 0 8px;
-  border-bottom: 1px solid #21262d;
-  margin-bottom: 10px;
+  padding: 4px 0;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1709,6 +1707,109 @@ main {
 
 .topo-machine.not-ready {
   border-color: #f85149;
+}
+
+.pool-toggle {
+  display: inline-block;
+  font-size: 16px;
+  margin-right: 6px;
+  transition: transform 0.2s;
+  color: #484f58;
+}
+
+.pool-toggle.open {
+  transform: rotate(90deg);
+}
+
+.topo-pool-header[data-pool] {
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+
+.topo-pool-header[data-pool]:hover {
+  opacity: 1;
+}
+
+.topo-pool-content {
+  margin-top: 10px;
+}
+
+.pool-collapsed {
+  display: none !important;
+}
+
+.topo-machine.rolling-out {
+  border-color: #58a6ff;
+}
+
+.topo-machine.degraded {
+  border-color: #f85149;
+  background: rgba(248, 81, 73, 0.06);
+}
+
+.rollout-badge {
+  font-size: 9px;
+  font-weight: 600;
+  color: #58a6ff;
+  background: rgba(88, 166, 255, 0.15);
+  border-radius: 3px;
+  padding: 1px 5px;
+  white-space: nowrap;
+}
+
+.degraded-badge {
+  color: #f85149;
+  background: rgba(248, 81, 73, 0.15);
+}
+
+.rollout-info {
+  font-size: 10px;
+  color: #58a6ff;
+  margin-top: auto;
+  padding-top: 6px;
+}
+
+.rollout-progress {
+  height: 3px;
+  background: #21262d;
+  border-radius: 2px;
+  margin-top: 3px;
+  overflow: hidden;
+}
+
+.rollout-progress-fill {
+  height: 100%;
+  background: #58a6ff;
+  border-radius: 2px;
+  transition: width 1s ease;
+}
+
+.demo-toast {
+  position: fixed;
+  bottom: 30px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #21262d;
+  color: #c9d1d9;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px 24px;
+  font-size: 13px;
+  opacity: 0;
+  transition: opacity 0.3s, transform 0.3s;
+  pointer-events: none;
+  z-index: 300;
+}
+
+.demo-toast.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+@keyframes rollout-pulse {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.2); }
+  50% { box-shadow: 0 0 8px 2px rgba(88, 166, 255, 0.3); }
 }
 
 .topo-machine-header {
@@ -1853,6 +1954,8 @@ main {
   z-index: 100;
   pointer-events: none;
   max-width: 350px;
+  transition: opacity 0.1s ease;
+  opacity: 1;
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 

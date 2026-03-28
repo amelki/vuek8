@@ -111,6 +111,18 @@ func HandleCachedMetrics(getCache CacheGetter) http.HandlerFunc {
 	}
 }
 
+func HandleCachedWorkloads(getCache CacheGetter) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		c := getCache()
+		if c == nil {
+			json.NewEncoder(w).Encode([]WorkloadStatus{})
+			return
+		}
+		json.NewEncoder(w).Encode(c.GetWorkloads())
+	}
+}
+
 // --- Data conversion (used by cache) ---
 
 func (c *Client) buildNodes(nodeList *corev1.NodeList) []NodeInfo {

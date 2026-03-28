@@ -22,6 +22,9 @@ let allMetrics = {}; // key: "namespace/podName" -> { cpuMilli, memBytes }
 let prevPodState = new Map(); // key: "namespace/podName" -> status (for animation tracking)
 let searchCaseSensitive = false;
 let searchRegex = false;
+let allWorkloadStatuses = {}; // key: "kind/namespace/name" -> WorkloadStatus
+let workloadsNeedFullLayout = true; // set to true when tab switches or view changes
+const collapsedPools = new Set(); // track collapsed pool/category headers
 let clusters = [];
 // Track expand state for group headers (keyed by group path)
 const expanded = new Map();
@@ -193,10 +196,11 @@ async function waitForCache() {
 
 // All API calls are instant (served from server-side cache)
 async function loadDataQuiet() {
-  const [nodesResult, podsResult, metricsResult] = await Promise.allSettled([
+  const [nodesResult, podsResult, metricsResult, workloadsResult] = await Promise.allSettled([
     fetchJSON('/api/nodes'),
     fetchJSON('/api/pods'),
     fetchJSON('/api/metrics'),
+    fetchJSON('/api/workloads'),
   ]);
   if (nodesResult.status === 'fulfilled') allNodes = nodesResult.value;
   if (podsResult.status === 'fulfilled') {
@@ -215,6 +219,12 @@ async function loadDataQuiet() {
         totalMem += cm.memBytes;
       }
       allMetrics[pm.namespace + '/' + pm.name] = { cpuMilli: totalCPU, memBytes: totalMem };
+    }
+  }
+  if (workloadsResult.status === 'fulfilled' && workloadsResult.value) {
+    allWorkloadStatuses = {};
+    for (const ws of workloadsResult.value) {
+      allWorkloadStatuses[ws.kind + '/' + ws.namespace + '/' + ws.name] = ws;
     }
   }
   populateWorkloads();
@@ -1166,14 +1176,8 @@ function dotAnim(p) {
   if (!animEnabled) return '';
   const key = p.namespace + '/' + p.name;
   const prev = prevPodState.get(key);
-  if (prev === undefined) {
-    console.log('NEW pod:', p.workloadName, p.name, p.status);
-    return ' topo-dot-new';
-  }
-  if (prev !== p.status) {
-    console.log('CHANGED pod:', p.workloadName, p.name, prev, '→', p.status);
-    return ' topo-dot-changed';
-  }
+  if (prev === undefined) return ' topo-dot-new';
+  if (prev !== p.status) return ' topo-dot-changed';
   return '';
 }
 
@@ -1323,9 +1327,10 @@ function renderTopologyByNodes(filtered, filter) {
     const totalPods = nodes.reduce((sum, n) => sum + (podsByNode.get(n.name) || []).length, 0);
     if (filter && totalPods === 0) continue;
 
+    const poolCollapsed = collapsedPools.has(pool);
     html += `<div class="topo-pool">`;
-    html += `<div class="topo-pool-header">${esc(pool)} <span class="pool-count">${nodes.length} nodes / ${totalPods} pods</span></div>`;
-    html += `<div class="topo-machines">`;
+    html += `<div class="topo-pool-header" data-pool="${esc(pool)}"><span class="pool-toggle ${poolCollapsed ? '' : 'open'}">&#8250;</span>${esc(pool)} <span class="pool-count">${nodes.length} nodes / ${totalPods} pods</span></div>`;
+    html += `<div class="topo-machines topo-pool-content ${poolCollapsed ? 'pool-collapsed' : ''}">`;
 
     for (const n of nodes) {
       const pods = podsByNode.get(n.name) || [];
@@ -1386,18 +1391,39 @@ function renderTopologyByPods(filtered, filter, mode) {
     const running = pods.filter(p => p.status === 'Running').length;
     const notRunning = pods.length - running;
     const kindLabel = showKind ? (pods[0].workloadKind || '') : '';
+    // Look up rollout status
+    const ns = pods[0] ? pods[0].namespace : 'default';
+    const kind = pods[0] ? (pods[0].workloadKind || 'Deployment') : 'Deployment';
+    const wsKey = kind + '/' + ns + '/' + name;
+    const ws = allWorkloadStatuses[wsKey];
+    const isRolling = ws && ws.rolloutStatus === 'progressing';
+    const isDegraded = ws && ws.rolloutStatus === 'degraded';
+    const cardClass = isRolling ? ' rolling-out' : isDegraded ? ' degraded' : (notRunning > 0 ? ' has-errors' : '');
     let h = '';
-    h += `<div class="topo-machine ${notRunning > 0 ? 'has-errors' : ''}">`;
+    h += `<div class="topo-machine${cardClass}">`;
     h += `<div class="topo-machine-header">`;
     h += `<span class="topo-machine-name">${esc(name)}</span>`;
+    if (isRolling) {
+      h += `<span class="rollout-badge">${ws.updatedReplicas}/${ws.replicas}</span>`;
+    } else if (isDegraded) {
+      h += `<span class="rollout-badge degraded-badge">degraded</span>`;
+    }
     h += `<span class="topo-machine-stats">${pods.length}</span>`;
     h += `</div>`;
-    h += `<div class="topo-machine-resources">${kindLabel ? esc(kindLabel) + ' &middot; ' : ''}${running} running${notRunning > 0 ? ' · ' + notRunning + ' unhealthy' : ''}</div>`;
+    if (kindLabel) {
+      h += `<div class="topo-machine-resources">${esc(kindLabel)}</div>`;
+    }
     h += `<div class="topo-pods">`;
     for (const p of pods) {
       h += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
     }
-    h += `</div></div>`;
+    h += `</div>`;
+    if (isRolling && ws.replicas > 0) {
+      const pct = Math.round((ws.updatedReplicas / ws.replicas) * 100);
+      h += `<div class="rollout-info">Rolling out · ${pct}%</div>`;
+      h += `<div class="rollout-progress"><div class="rollout-progress-fill" style="width:${pct}%"></div></div>`;
+    }
+    h += `</div>`;
     return h;
   }
 
@@ -1471,17 +1497,24 @@ function renderTopologyByPods(filtered, filter, mode) {
 
     for (const [kind, workloads] of sortedKinds) {
       const totalPods = workloads.reduce((sum, w) => sum + w[1].length, 0);
+      const kindKey = 'wl-' + kind;
+      const kindCollapsed = collapsedPools.has(kindKey);
       html += `<div class="topo-pool">`;
-      html += `<div class="topo-pool-header">${esc(kind)}s <span class="pool-count">${workloads.length} workloads / ${totalPods} pods</span></div>`;
+      html += `<div class="topo-pool-header" data-pool="${esc(kindKey)}"><span class="pool-toggle ${kindCollapsed ? '' : 'open'}">&#8250;</span>${esc(kind)}s <span class="pool-count">${workloads.length} workloads / ${totalPods} pods</span></div>`;
+      html += `<div class="topo-pool-content ${kindCollapsed ? 'pool-collapsed' : ''}">`;
       html += masonryLayout(workloads, false);
-      html += `</div>`;
+      html += `</div></div>`;
     }
   } else {
     const totalPods = filtered.length;
     const label = mode === 'workload-flat' ? 'workloads' : mode === 'kind' ? 'kinds' : 'namespaces';
+    const flatKey = 'wl-flat';
+    const flatCollapsed = collapsedPools.has(flatKey);
     html += `<div class="topo-pool">`;
-    html += `<div class="topo-pool-header">${esc(label)} <span class="pool-count">${sorted.length} ${label} / ${totalPods} pods</span></div>`;
+    html += `<div class="topo-pool-header" data-pool="${esc(flatKey)}"><span class="pool-toggle ${flatCollapsed ? '' : 'open'}">&#8250;</span>${esc(label)} <span class="pool-count">${sorted.length} ${label} / ${totalPods} pods</span></div>`;
+    html += `<div class="topo-pool-content ${flatCollapsed ? 'pool-collapsed' : ''}">`;
     html += masonryLayout(sorted, false);
+    html += `</div>`;
   }
   html += `</div></div>`;
 
@@ -1494,6 +1527,7 @@ function renderNodes() {
   const html = renderTopologyByNodes(filtered, filter);
   topoEl.innerHTML = html;
   attachTopoDotListeners(topoEl);
+  attachPoolToggleListeners(topoEl);
 }
 
 function renderWorkloads() {
@@ -1501,74 +1535,218 @@ function renderWorkloads() {
   const filter = podSearch.value.toLowerCase();
   const wlGroup = document.getElementById('workload-group').value;
   const modeMap = {'kind': 'workload-by-kind', 'flat': 'workload-flat', 'by-kind': 'kind'};
-  const html = renderTopologyByPods(filtered, filter, modeMap[wlGroup] || 'workload-by-kind');
-  workloadsEl.innerHTML = html;
-  attachTopoDotListeners(workloadsEl);
+
+  if (workloadsNeedFullLayout || !workloadsEl.hasChildNodes()) {
+    // Full layout: recompute masonry from scratch
+    const html = renderTopologyByPods(filtered, filter, modeMap[wlGroup] || 'workload-by-kind');
+    workloadsEl.innerHTML = html;
+    attachTopoDotListeners(workloadsEl);
+    attachPoolToggleListeners(workloadsEl);
+    workloadsNeedFullLayout = false;
+  } else {
+    // Incremental: update card contents in place
+    updateWorkloadCardsInPlace(filtered, modeMap[wlGroup] || 'workload-by-kind');
+  }
+}
+
+function updateWorkloadCardsInPlace(filtered, mode) {
+  // Group pods by the same key used in renderTopologyByPods
+  const cards = new Map();
+  for (const p of filtered) {
+    let key;
+    if (mode === 'workload-by-kind' || mode === 'workload-flat') {
+      key = p.workloadName || p.name;
+    } else if (mode === 'kind') {
+      key = p.workloadKind || 'Pod';
+    } else {
+      key = p.namespace || 'default';
+    }
+    if (!cards.has(key)) cards.set(key, []);
+    cards.get(key).push(p);
+  }
+
+  // Find all card elements and update their contents
+  workloadsEl.querySelectorAll('.topo-machine').forEach(cardEl => {
+    const nameEl = cardEl.querySelector('.topo-machine-name');
+    if (!nameEl) return;
+    const name = nameEl.textContent;
+    const pods = cards.get(name);
+    if (!pods) return;
+
+    // Update pod count
+    const statsEl = cardEl.querySelector('.topo-machine-stats');
+    if (statsEl) statsEl.textContent = pods.length;
+
+    // Update resources line
+    const running = pods.filter(p => p.status === 'Running').length;
+    const notRunning = pods.length - running;
+    const resEl = cardEl.querySelector('.topo-machine-resources');
+    const kindLabel = pods[0] ? (pods[0].workloadKind || '') : '';
+
+    // Check rollout status
+    const ns = pods[0] ? pods[0].namespace : 'default';
+    const kind = pods[0] ? (pods[0].workloadKind || 'Deployment') : 'Deployment';
+    const wsKey = kind + '/' + ns + '/' + name;
+    const ws = allWorkloadStatuses[wsKey];
+    const isRolling = ws && ws.rolloutStatus === 'progressing';
+    const isDegraded = ws && ws.rolloutStatus === 'degraded';
+
+    if (resEl) {
+      resEl.textContent = kindLabel || '';
+    }
+
+    // Update/add rollout info text
+    let infoEl = cardEl.querySelector('.rollout-info');
+    if (isRolling && ws.replicas > 0) {
+      if (!infoEl) {
+        infoEl = document.createElement('div');
+        infoEl.className = 'rollout-info';
+        const dotsEl2 = cardEl.querySelector('.topo-pods');
+        if (dotsEl2) dotsEl2.after(infoEl);
+      }
+      const pctText = Math.round((ws.updatedReplicas / ws.replicas) * 100);
+      infoEl.textContent = 'Rolling out \u00b7 ' + pctText + '%';
+    } else if (infoEl) {
+      infoEl.remove();
+    }
+
+    // Update card class
+    cardEl.className = 'topo-machine' + (isRolling ? ' rolling-out' : isDegraded ? ' degraded' : (notRunning > 0 ? ' has-errors' : ''));
+
+    // Lock height during rollout so card doesn't bounce
+    if (isRolling) {
+      const currentHeight = cardEl.offsetHeight;
+      const currentMin = parseInt(cardEl.style.minHeight) || 0;
+      if (currentHeight > currentMin) {
+        cardEl.style.minHeight = currentHeight + 'px';
+      }
+    } else {
+      cardEl.style.minHeight = '';
+    }
+
+    // Update/add rollout badge
+    let badge = cardEl.querySelector('.rollout-badge');
+    if (isRolling) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'rollout-badge';
+        const header = cardEl.querySelector('.topo-machine-header');
+        if (header && statsEl) header.insertBefore(badge, statsEl);
+      }
+      badge.textContent = ws.updatedReplicas + '/' + ws.replicas;
+    } else if (badge) {
+      badge.remove();
+    }
+
+    // Update/add rollout progress bar
+    let progressEl = cardEl.querySelector('.rollout-progress');
+    if (isRolling && ws.replicas > 0) {
+      const pct = Math.round((ws.updatedReplicas / ws.replicas) * 100);
+      if (!progressEl) {
+        progressEl = document.createElement('div');
+        progressEl.className = 'rollout-progress';
+        progressEl.innerHTML = `<div class="rollout-progress-fill" style="width:${pct}%"></div>`;
+        cardEl.appendChild(progressEl);
+      } else {
+        progressEl.querySelector('.rollout-progress-fill').style.width = pct + '%';
+      }
+    } else if (progressEl) {
+      progressEl.remove();
+    }
+
+    // Update pod dots
+    const dotsEl = cardEl.querySelector('.topo-pods');
+    if (dotsEl) {
+      let dotsHtml = '';
+      for (const p of pods) {
+        dotsHtml += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+      }
+      dotsEl.innerHTML = dotsHtml;
+      // Re-attach listeners for new dots
+      dotsEl.querySelectorAll('.topo-dot').forEach(el => {
+        el.addEventListener('mouseenter', (e) => {
+          const p = JSON.parse(atob(el.dataset.podB64));
+          showDotTooltip(p, e);
+        });
+        el.addEventListener('mousemove', positionTooltip);
+        el.addEventListener('mouseleave', () => tooltipEl.classList.add('hidden'));
+        el.addEventListener('click', () => {
+          const p = JSON.parse(atob(el.dataset.podB64));
+          tooltipEl.classList.add('hidden');
+          openDetail(p);
+        });
+      });
+    }
+  });
+}
+
+function showDotTooltip(p, e) {
+  const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
+  tooltipEl.innerHTML =
+    `<div class="tooltip-row"><span class="tooltip-label">Pod</span> <span class="tooltip-value">${esc(p.name)}</span></div>` +
+    `<div class="tooltip-row"><span class="tooltip-label">Namespace</span> <span class="tooltip-value">${esc(p.namespace)}</span></div>` +
+    `<div class="tooltip-row"><span class="tooltip-label">Status</span> <span class="tooltip-value ${statusClass(p.status)}">${esc(p.status)}</span></div>` +
+    `<div class="tooltip-row"><span class="tooltip-label">Ready</span> <span class="tooltip-value">${esc(p.ready)}</span></div>` +
+    (p.restarts > 0 ? `<div class="tooltip-row"><span class="tooltip-label">Restarts</span> <span class="tooltip-value">${p.restarts}</span></div>` : '') +
+    `<div class="tooltip-row"><span class="tooltip-label">Age</span> <span class="tooltip-value">${esc(p.age)}</span></div>` +
+    (tag ? `<div class="tooltip-row"><span class="tooltip-label">Image</span> <span class="tooltip-value">${esc(tag)}</span></div>` : '') +
+    (p.workloadName ? `<div class="tooltip-row"><span class="tooltip-label">${esc(p.workloadKind)}</span> <span class="tooltip-value">${esc(p.workloadName)}</span></div>` : '');
+  const metricKey = p.namespace + '/' + p.name;
+  const metric = allMetrics[metricKey];
+  if (metric) {
+    const cpuLimit = p.cpuLimitMilli || 0;
+    const memLimit = p.memLimitBytes || 0;
+    let cpuText = fmtCPU(metric.cpuMilli);
+    if (cpuLimit > 0) {
+      cpuText += ` / ${fmtCPU(cpuLimit)} (${Math.round((metric.cpuMilli / cpuLimit) * 100)}%)`;
+    } else {
+      const nodeCPU = getNodeCPUMilli(p.node);
+      if (nodeCPU > 0) cpuText += ` / ${fmtCPU(nodeCPU)} node (${Math.round((metric.cpuMilli / nodeCPU) * 100)}%)`;
+    }
+    let memText = fmtMem(metric.memBytes);
+    if (memLimit > 0) {
+      memText += ` / ${fmtMem(memLimit)} limit (${Math.round((metric.memBytes / memLimit) * 100)}%)`;
+    } else {
+      const nodeMem = getNodeMemBytes(p.node);
+      if (nodeMem > 0) memText += ` / ${fmtMem(nodeMem)} node (${Math.round((metric.memBytes / nodeMem) * 100)}%)`;
+    }
+    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">CPU</span> <span class="tooltip-value">${cpuText}</span></div>`;
+    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">Memory</span> <span class="tooltip-value">${memText}</span></div>`;
+  }
+  tooltipEl.classList.remove('hidden');
+  positionTooltip(e);
+}
+
+let tooltipTimer = null;
+
+function attachPoolToggleListeners(container) {
+  container.querySelectorAll('.topo-pool-header[data-pool]').forEach(el => {
+    el.style.cursor = 'pointer';
+    el.addEventListener('click', () => {
+      const pool = el.dataset.pool;
+      if (collapsedPools.has(pool)) {
+        collapsedPools.delete(pool);
+      } else {
+        collapsedPools.add(pool);
+      }
+      // Toggle the content visibility
+      const content = el.nextElementSibling;
+      if (content) content.classList.toggle('pool-collapsed');
+      const toggle = el.querySelector('.pool-toggle');
+      if (toggle) toggle.classList.toggle('open');
+    });
+  });
 }
 
 function attachTopoDotListeners(container) {
-
   container.querySelectorAll('.topo-dot').forEach(el => {
     el.addEventListener('mouseenter', (e) => {
-      const p = JSON.parse(atob(el.dataset.podB64));
-      const tag = (p.containers && p.containers.length > 0) ? p.containers[0].tag : '';
-      tooltipEl.innerHTML =
-        `<div class="tooltip-row"><span class="tooltip-label">Pod</span> <span class="tooltip-value">${esc(p.name)}</span></div>` +
-        `<div class="tooltip-row"><span class="tooltip-label">Namespace</span> <span class="tooltip-value">${esc(p.namespace)}</span></div>` +
-        `<div class="tooltip-row"><span class="tooltip-label">Status</span> <span class="tooltip-value">${esc(p.status)}</span></div>` +
-        `<div class="tooltip-row"><span class="tooltip-label">Ready</span> <span class="tooltip-value">${esc(p.ready)}</span></div>` +
-        (p.restarts > 0 ? `<div class="tooltip-row"><span class="tooltip-label">Restarts</span> <span class="tooltip-value">${p.restarts}</span></div>` : '') +
-        `<div class="tooltip-row"><span class="tooltip-label">Age</span> <span class="tooltip-value">${esc(p.age)}</span></div>` +
-        (tag ? `<div class="tooltip-row"><span class="tooltip-label">Image</span> <span class="tooltip-value">${esc(tag)}</span></div>` : '') +
-        (p.workloadName ? `<div class="tooltip-row"><span class="tooltip-label">${esc(p.workloadKind)}</span> <span class="tooltip-value">${esc(p.workloadName)}</span></div>` : '');
-      // Add CPU/Memory info if available
-      const metricKey = p.namespace + '/' + p.name;
-      const metric = allMetrics[metricKey];
-      if (metric) {
-        const cpuLimit = p.cpuLimitMilli || 0;
-        const memLimit = p.memLimitBytes || 0;
-        const cpuPct = cpuLimit > 0 ? Math.round((metric.cpuMilli / cpuLimit) * 100) : null;
-        const memMi = Math.round(metric.memBytes / 1024 / 1024);
-        const memLimitMi = memLimit > 0 ? Math.round(memLimit / 1024 / 1024) : 0;
-
-        let cpuText = fmtCPU(metric.cpuMilli);
-        if (cpuLimit > 0) {
-          cpuText += ` / ${fmtCPU(cpuLimit)} (${cpuPct}%)`;
-        } else {
-          const nodeCPU = getNodeCPUMilli(p.node);
-          if (nodeCPU > 0) {
-            const nodePct = Math.round((metric.cpuMilli / nodeCPU) * 100);
-            cpuText += ` / ${fmtCPU(nodeCPU)} node (${nodePct}%)`;
-          }
-        }
-
-        let memText = fmtMem(metric.memBytes);
-        if (memLimit > 0) {
-          const memPct = Math.round((metric.memBytes / memLimit) * 100);
-          memText += ` / ${fmtMem(memLimit)} limit (${memPct}%)`;
-        } else {
-          const nodeMem = getNodeMemBytes(p.node);
-          if (nodeMem > 0) {
-            const nodePct = Math.round((metric.memBytes / nodeMem) * 100);
-            memText += ` / ${fmtMem(nodeMem)} node (${nodePct}%)`;
-          }
-        }
-
-        tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">CPU</span> <span class="tooltip-value">${cpuText}</span></div>`;
-        tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">Memory</span> <span class="tooltip-value">${memText}</span></div>`;
-      }
-      tooltipEl.classList.remove('hidden');
-      positionTooltip(e);
+      clearTimeout(tooltipTimer);
+      tooltipTimer = setTimeout(() => showDotTooltip(JSON.parse(atob(el.dataset.podB64)), e), 120);
     });
     el.addEventListener('mousemove', positionTooltip);
-    el.addEventListener('mouseleave', () => {
-      tooltipEl.classList.add('hidden');
-    });
-    el.addEventListener('click', () => {
-      const p = JSON.parse(atob(el.dataset.podB64));
-      tooltipEl.classList.add('hidden');
-      openDetail(p);
-    });
+    el.addEventListener('mouseleave', () => { clearTimeout(tooltipTimer); tooltipEl.classList.add('hidden'); });
+    el.addEventListener('click', () => { clearTimeout(tooltipTimer); tooltipEl.classList.add('hidden'); openDetail(JSON.parse(atob(el.dataset.podB64))); });
   });
 }
 
@@ -1588,6 +1766,7 @@ function updateExpandToggle() {
 
 function switchTab(tab) {
   activeTab = tab;
+  workloadsNeedFullLayout = true;
   document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
   topoEl.classList.toggle('hidden', tab !== 'nodes');
   workloadsEl.classList.toggle('hidden', tab !== 'workloads');
@@ -1784,8 +1963,8 @@ function syncPickerText(selectId, pickerId) {
   picker.textContent = opt.textContent;
 }
 
-nsSelect.addEventListener('change', () => { populateWorkloads(); render(); saveSessionState(); });
-wlSelect.addEventListener('change', () => { render(); saveSessionState(); });
+nsSelect.addEventListener('change', () => { workloadsNeedFullLayout = true; populateWorkloads(); render(); saveSessionState(); });
+wlSelect.addEventListener('change', () => { workloadsNeedFullLayout = true; render(); saveSessionState(); });
 groupSelect.addEventListener('change', () => { updateExpandToggle(); render(); saveSessionState(); });
 document.getElementById('color-mode').addEventListener('change', () => { render(); saveSessionState(); });
 document.getElementById('topo-group').addEventListener('change', () => {
@@ -1797,15 +1976,17 @@ document.getElementById('topo-label-select').addEventListener('change', () => {
   render();
   saveSessionState();
 });
-document.getElementById('workload-group').addEventListener('change', () => { render(); saveSessionState(); });
+document.getElementById('workload-group').addEventListener('change', () => { workloadsNeedFullLayout = true; render(); saveSessionState(); });
 podSearch.addEventListener('input', () => {
   document.getElementById('pod-search-clear').classList.toggle('hidden', !podSearch.value);
+  workloadsNeedFullLayout = true;
   render();
   saveSessionState();
 });
 document.getElementById('pod-search-clear').addEventListener('click', () => {
   podSearch.value = '';
   document.getElementById('pod-search-clear').classList.add('hidden');
+  workloadsNeedFullLayout = true;
   render();
   saveSessionState();
 });
@@ -2461,6 +2642,28 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
   document.getElementById('update-banner').classList.add('hidden');
 });
 
+// Demo rollout keyboard shortcut
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement.tagName !== 'INPUT') {
+    fetch(apiURL('/api/demo/rollout/toggle'), { method: 'POST' }).catch(() => {});
+    showToast('Press R to start/stop rollout');
+  }
+});
+
+function showToast(msg) {
+  let toast = document.getElementById('demo-toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'demo-toast';
+    toast.className = 'demo-toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('visible');
+  clearTimeout(toast._timer);
+  toast._timer = setTimeout(() => toast.classList.remove('visible'), 2000);
+}
+
 // Startup
 (async () => {
   // In native app, the API URL is injected into the HTML
@@ -2478,4 +2681,12 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
   setInterval(refresh, 3000);
   setInterval(loadNamespaces, 15000);
   setInterval(loadClusters, 5000);
+
+  // Show demo hint after a short delay (GET to check, won't trigger rollout)
+  try {
+    const demoCheck = await fetch(apiURL('/api/demo/rollout/toggle'));
+    if (demoCheck.ok) {
+      setTimeout(() => showToast('Press R to start/stop a rollout demo'), 2000);
+    }
+  } catch(e) {}
 })();

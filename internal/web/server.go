@@ -44,6 +44,7 @@ func NewServer(mgr *cluster.Manager) *http.Server {
 	mux.HandleFunc("/api/pods", kube.HandleCachedPods(getCache))
 	mux.HandleFunc("/api/progress", kube.HandleProgress(getCache))
 	mux.HandleFunc("/api/metrics", kube.HandleCachedMetrics(getCache))
+	mux.HandleFunc("/api/workloads", kube.HandleCachedWorkloads(getCache))
 
 	// Cluster management API
 	mux.HandleFunc("/api/clusters", cluster.HandleListClusters(mgr))
