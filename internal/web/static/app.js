@@ -969,6 +969,7 @@ function showPodActionsMenu(e) {
   menu.style.left = rect.left + 'px';
   menu.style.top = (rect.bottom + 4) + 'px';
 
+  const p = currentDetailPod;
   const items = [
     { label: 'Open shell in terminal', action: () => openTerminalExec() },
     { label: 'Copy shell command', action: () => copyTerminalCmd('exec') },
@@ -976,6 +977,12 @@ function showPodActionsMenu(e) {
     { label: 'Tail logs in terminal', action: () => openTerminalLogs() },
     { label: 'Copy tail command', action: () => copyTerminalCmd('logs') },
   ];
+  if (appSettings.allowActions) {
+    items.push({ sep: true });
+    items.push({ label: 'Delete pod', action: () => confirmDeletePod(p), danger: true });
+    items.push({ sep: true });
+    items.push({ label: 'Restart ' + (p.workloadKind || 'workload'), action: () => confirmRestartWorkload(p) });
+  }
 
   for (const item of items) {
     if (item.sep) {
@@ -985,7 +992,7 @@ function showPodActionsMenu(e) {
       continue;
     }
     const el = document.createElement('div');
-    el.className = 'pod-actions-item';
+    el.className = 'pod-actions-item' + (item.danger ? ' danger' : '');
     el.textContent = item.label;
     el.addEventListener('click', () => {
       closePodActionsMenu();
@@ -1006,6 +1013,48 @@ function closePodActionsMenu() {
   if (podActionsMenu) {
     podActionsMenu.remove();
     podActionsMenu = null;
+  }
+}
+
+async function confirmDeletePod(p) {
+  if (!confirm(`Delete pod ${p.name} in namespace ${p.namespace}?`)) return;
+  try {
+    const res = await fetch(apiURL('/api/actions/delete-pod'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ namespace: p.namespace, pod: p.name }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast('Error: ' + data.error);
+    } else {
+      showToast('Pod ' + p.name + ' deleted');
+      closeDetail();
+    }
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
+}
+
+async function confirmRestartWorkload(p) {
+  const kind = p.workloadKind || p.kind || 'Deployment';
+  const name = p.workloadName || p.name;
+  const ns = p.namespace;
+  if (!confirm(`Restart ${kind} ${name}?`)) return;
+  try {
+    const res = await fetch(apiURL('/api/actions/restart-workload'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ namespace: ns, workloadName: name, workloadKind: kind }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast('Error: ' + data.error);
+    } else {
+      showToast(kind + ' ' + name + ' restarting');
+    }
+  } catch (e) {
+    showToast('Error: ' + e.message);
   }
 }
 
@@ -1275,6 +1324,14 @@ function resourceColor(pct) {
   return 'background: #f85149;';
 }
 
+function resourceFontColor(pct) {
+  if (pct < 10) return '#238636';
+  if (pct < 30) return '#3fb950';
+  if (pct < 60) return '#d29922';
+  if (pct < 85) return '#da6d28';
+  return '#f85149';
+}
+
 function dotStyle(p) {
   const mode = getColorMode();
   if (mode === 'pod-status') return '';
@@ -1399,8 +1456,9 @@ function renderTopologyByPods(filtered, filter, mode) {
     const isRolling = ws && ws.rolloutStatus === 'progressing';
     const isDegraded = ws && ws.rolloutStatus === 'degraded';
     const cardClass = isRolling ? ' rolling-out' : isDegraded ? ' degraded' : (notRunning > 0 ? ' has-errors' : '');
+    const wlData = btoa(JSON.stringify({ name, namespace: ns, kind, podCount: pods.length }));
     let h = '';
-    h += `<div class="topo-machine${cardClass}">`;
+    h += `<div class="topo-machine${cardClass}" data-workload="${wlData}">`;
     h += `<div class="topo-machine-header">`;
     h += `<span class="topo-machine-name">${esc(name)}</span>`;
     if (isRolling) {
@@ -1542,6 +1600,7 @@ function renderWorkloads() {
     workloadsEl.innerHTML = html;
     attachTopoDotListeners(workloadsEl);
     attachPoolToggleListeners(workloadsEl);
+    attachWorkloadCardListeners(workloadsEl);
     workloadsNeedFullLayout = false;
   } else {
     // Incremental: update card contents in place
@@ -1685,7 +1744,7 @@ function showDotTooltip(p, e) {
   tooltipEl.innerHTML =
     `<div class="tooltip-row"><span class="tooltip-label">Pod</span> <span class="tooltip-value">${esc(p.name)}</span></div>` +
     `<div class="tooltip-row"><span class="tooltip-label">Namespace</span> <span class="tooltip-value">${esc(p.namespace)}</span></div>` +
-    `<div class="tooltip-row"><span class="tooltip-label">Status</span> <span class="tooltip-value ${statusClass(p.status)}">${esc(p.status)}</span></div>` +
+    `<div class="tooltip-row"><span class="tooltip-label">Status</span> <span class="tooltip-value ${getColorMode() === 'pod-status' ? statusClass(p.status) : ''}">${esc(p.status)}</span></div>` +
     `<div class="tooltip-row"><span class="tooltip-label">Ready</span> <span class="tooltip-value">${esc(p.ready)}</span></div>` +
     (p.restarts > 0 ? `<div class="tooltip-row"><span class="tooltip-label">Restarts</span> <span class="tooltip-value">${p.restarts}</span></div>` : '') +
     `<div class="tooltip-row"><span class="tooltip-label">Age</span> <span class="tooltip-value">${esc(p.age)}</span></div>` +
@@ -1710,8 +1769,13 @@ function showDotTooltip(p, e) {
       const nodeMem = getNodeMemBytes(p.node);
       if (nodeMem > 0) memText += ` / ${fmtMem(nodeMem)} node (${Math.round((metric.memBytes / nodeMem) * 100)}%)`;
     }
-    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">CPU</span> <span class="tooltip-value">${cpuText}</span></div>`;
-    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">Memory</span> <span class="tooltip-value">${memText}</span></div>`;
+    const colorMode = getColorMode();
+    const cpuPctVal = cpuLimit > 0 ? (metric.cpuMilli / cpuLimit) * 100 : (getNodeCPUMilli(p.node) > 0 ? (metric.cpuMilli / getNodeCPUMilli(p.node)) * 100 : 0);
+    const memPctVal = memLimit > 0 ? (metric.memBytes / memLimit) * 100 : (getNodeMemBytes(p.node) > 0 ? (metric.memBytes / getNodeMemBytes(p.node)) * 100 : 0);
+    const cpuColor = colorMode === 'pod-cpu' && cpuPctVal > 0 ? ` style="color:${resourceFontColor(cpuPctVal)}"` : '';
+    const memColor = colorMode === 'pod-mem' && memPctVal > 0 ? ` style="color:${resourceFontColor(memPctVal)}"` : '';
+    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">CPU</span> <span class="tooltip-value"${cpuColor}>${cpuText}</span></div>`;
+    tooltipEl.innerHTML += `<div class="tooltip-row"><span class="tooltip-label">Memory</span> <span class="tooltip-value"${memColor}>${memText}</span></div>`;
   }
   tooltipEl.classList.remove('hidden');
   positionTooltip(e);
@@ -1736,6 +1800,70 @@ function attachPoolToggleListeners(container) {
       if (toggle) toggle.classList.toggle('open');
     });
   });
+}
+
+function attachWorkloadCardListeners(container) {
+  container.querySelectorAll('.topo-machine[data-workload]').forEach(card => {
+    card.addEventListener('contextmenu', (e) => {
+      if (!appSettings.allowActions) return;
+      e.preventDefault();
+      const wl = JSON.parse(atob(card.dataset.workload));
+      showWorkloadContextMenu(wl, e.clientX, e.clientY);
+    });
+  });
+}
+
+let workloadContextMenu = null;
+
+function showWorkloadContextMenu(wl, x, y) {
+  closeWorkloadContextMenu();
+  const menu = document.createElement('div');
+  menu.className = 'pod-actions-menu';
+  menu.style.left = x + 'px';
+  menu.style.top = y + 'px';
+
+  const items = [
+    { label: `Restart ${wl.kind}`, action: () => confirmRestartWorkload({ namespace: wl.namespace, workloadName: wl.name, workloadKind: wl.kind }) },
+    { label: `Scale ${wl.kind}`, action: () => promptScaleWorkload(wl) },
+  ];
+
+  for (const item of items) {
+    const el = document.createElement('div');
+    el.className = 'pod-actions-item' + (item.danger ? ' danger' : '');
+    el.textContent = item.label;
+    el.addEventListener('click', () => { closeWorkloadContextMenu(); item.action(); });
+    menu.appendChild(el);
+  }
+
+  document.body.appendChild(menu);
+  workloadContextMenu = menu;
+  setTimeout(() => document.addEventListener('click', closeWorkloadContextMenu, { once: true }), 0);
+}
+
+function closeWorkloadContextMenu() {
+  if (workloadContextMenu) { workloadContextMenu.remove(); workloadContextMenu = null; }
+}
+
+async function promptScaleWorkload(wl) {
+  const input = prompt(`Scale ${wl.kind} ${wl.name} (currently ${wl.podCount} pods).\nNew replica count:`, wl.podCount);
+  if (input === null) return;
+  const replicas = parseInt(input);
+  if (isNaN(replicas) || replicas < 0) { showToast('Invalid replica count'); return; }
+  try {
+    const res = await fetch(apiURL('/api/actions/scale-workload'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ namespace: wl.namespace, workloadName: wl.name, workloadKind: wl.kind, replicas }),
+    });
+    const data = await res.json();
+    if (data.error) {
+      showToast('Error: ' + data.error);
+    } else {
+      showToast(wl.kind + ' ' + wl.name + ' scaled to ' + replicas);
+    }
+  } catch (e) {
+    showToast('Error: ' + e.message);
+  }
 }
 
 function attachTopoDotListeners(container) {
@@ -2558,6 +2686,7 @@ function showOptionsMenu() {
 
   const showHidden = appSettings.showHidden || false;
   const showAllContexts = appSettings.showAllContexts || false;
+  const allowActions = appSettings.allowActions || false;
 
   menu.innerHTML = `
     <div class="options-menu-item" data-option="showHidden">
@@ -2567,6 +2696,11 @@ function showOptionsMenu() {
     <div class="options-menu-item" data-option="showAllContexts">
       <span class="options-check">${showAllContexts ? '&#10003;' : ''}</span>
       Show all contexts per kubeconfig
+    </div>
+    <div class="options-menu-sep"></div>
+    <div class="options-menu-item" data-option="allowActions">
+      <span class="options-check">${allowActions ? '&#10003;' : ''}</span>
+      Allow actions (delete, restart, scale)
     </div>
   `;
 

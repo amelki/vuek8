@@ -136,6 +136,10 @@ func (c *Cache) GetWorkloads() []WorkloadStatus {
 	return c.workloads
 }
 
+func (c *Cache) GetClient() *Client {
+	return c.client
+}
+
 type Progress struct {
 	Current   int    `json:"current"`
 	Total     int    `json:"total"`

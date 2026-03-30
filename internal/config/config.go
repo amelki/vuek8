@@ -25,6 +25,7 @@ type Settings struct {
 	TopoLabel        string   `json:"topoLabel,omitempty"`
 	ListGroup        string   `json:"listGroup,omitempty"`
 	ClusterOrder     []string `json:"clusterOrder,omitempty"`
+	AllowActions     bool     `json:"allowActions,omitempty"`
 }
 
 type Config struct {

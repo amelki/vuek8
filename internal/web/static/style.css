@@ -164,6 +164,12 @@ body {
   font-size: 14px;
 }
 
+.options-menu-sep {
+  height: 1px;
+  background: #30363d;
+  margin: 4px 0;
+}
+
 .sidebar-show-hidden {
   font-size: 11px;
   color: #8b949e;
@@ -1123,39 +1129,16 @@ main {
   cursor: help;
 }
 
-/* Status badges */
+/* Status colors */
 .status {
-  display: inline;
-  padding: 1px 7px;
-  border-radius: 10px;
-  font-size: 11px;
   font-weight: 600;
 }
 
-.status-running, .status-ready {
-  background: rgba(63, 185, 80, 0.15);
-  color: #3fb950;
-}
-
-.status-pending, .status-containercreating {
-  background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
-}
-
-.status-succeeded, .status-completed {
-  background: rgba(139, 148, 158, 0.15);
-  color: #8b949e;
-}
-
-.status-failed, .status-error, .status-crashloopbackoff, .status-imagepullbackoff, .status-errimagepull {
-  background: rgba(248, 81, 73, 0.15);
-  color: #f85149;
-}
-
-.status-terminating {
-  background: rgba(210, 153, 34, 0.15);
-  color: #d29922;
-}
+.status-running, .status-ready { color: #3fb950; }
+.status-pending, .status-containercreating { color: #d29922; }
+.status-succeeded, .status-completed { color: #8b949e; }
+.status-failed, .status-error, .status-crashloopbackoff, .status-imagepullbackoff, .status-errimagepull { color: #f85149; }
+.status-terminating { color: #d29922; }
 
 .status-notready {
   background: rgba(248, 81, 73, 0.15);
@@ -1540,6 +1523,14 @@ main {
 
 .pod-actions-item:hover {
   background: #21262d;
+}
+
+.pod-actions-item.danger {
+  color: #f85149;
+}
+
+.pod-actions-item.danger:hover {
+  background: rgba(248, 81, 73, 0.1);
 }
 
 .pod-actions-sep {
