@@ -2,7 +2,9 @@ package kube
 
 import (
 	"context"
+	"log"
 
+	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -21,64 +23,94 @@ func (c *Client) FetchWorkloadStatuses(ctx context.Context) []WorkloadStatus {
 	var statuses []WorkloadStatus
 
 	// Fetch Deployments
-	deployments, err := c.Clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
+	var allDeployments []appsv1.Deployment
+	deps, err := c.Clientset.AppsV1().Deployments("").List(ctx, metav1.ListOptions{})
 	if err == nil {
-		for _, d := range deployments.Items {
-			desired := int32(1)
-			if d.Spec.Replicas != nil {
-				desired = *d.Spec.Replicas
+		allDeployments = deps.Items
+	} else {
+		log.Printf("workloads: cluster-wide deployment list failed (%v), trying per-namespace", err)
+		nsList, nsErr := c.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if nsErr == nil {
+			for _, ns := range nsList.Items {
+				d, dErr := c.Clientset.AppsV1().Deployments(ns.Name).List(ctx, metav1.ListOptions{})
+				if dErr == nil {
+					allDeployments = append(allDeployments, d.Items...)
+				}
 			}
-			s := d.Status
-			status := "stable"
-			if s.UpdatedReplicas < desired || s.ReadyReplicas < s.UpdatedReplicas || s.AvailableReplicas < desired {
-				status = "progressing"
-			}
-			if s.ReadyReplicas == 0 && desired > 0 {
-				status = "degraded"
-			}
-			statuses = append(statuses, WorkloadStatus{
-				Name:              d.Name,
-				Namespace:         d.Namespace,
-				Kind:              "Deployment",
-				Replicas:          desired,
-				ReadyReplicas:     s.ReadyReplicas,
-				UpdatedReplicas:   s.UpdatedReplicas,
-				AvailableReplicas: s.AvailableReplicas,
-				RolloutStatus:     status,
-			})
 		}
+		log.Printf("workloads: fetched %d deployments via fallback", len(allDeployments))
+	}
+
+	for _, d := range allDeployments {
+		desired := int32(1)
+		if d.Spec.Replicas != nil {
+			desired = *d.Spec.Replicas
+		}
+		s := d.Status
+		status := "stable"
+		if s.UpdatedReplicas < desired || s.ReadyReplicas < s.UpdatedReplicas || s.AvailableReplicas < desired {
+			status = "progressing"
+		}
+		if s.ReadyReplicas == 0 && desired > 0 {
+			status = "degraded"
+		}
+		statuses = append(statuses, WorkloadStatus{
+			Name:              d.Name,
+			Namespace:         d.Namespace,
+			Kind:              "Deployment",
+			Replicas:          desired,
+			ReadyReplicas:     s.ReadyReplicas,
+			UpdatedReplicas:   s.UpdatedReplicas,
+			AvailableReplicas: s.AvailableReplicas,
+			RolloutStatus:     status,
+		})
 	}
 
 	// Fetch StatefulSets
-	statefulsets, err := c.Clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
+	var allStatefulSets []appsv1.StatefulSet
+	sss, err := c.Clientset.AppsV1().StatefulSets("").List(ctx, metav1.ListOptions{})
 	if err == nil {
-		for _, ss := range statefulsets.Items {
-			desired := int32(1)
-			if ss.Spec.Replicas != nil {
-				desired = *ss.Spec.Replicas
+		allStatefulSets = sss.Items
+	} else {
+		log.Printf("workloads: cluster-wide statefulset list failed (%v), trying per-namespace", err)
+		nsList, nsErr := c.Clientset.CoreV1().Namespaces().List(ctx, metav1.ListOptions{})
+		if nsErr == nil {
+			for _, ns := range nsList.Items {
+				ss, ssErr := c.Clientset.AppsV1().StatefulSets(ns.Name).List(ctx, metav1.ListOptions{})
+				if ssErr == nil {
+					allStatefulSets = append(allStatefulSets, ss.Items...)
+				}
 			}
-			s := ss.Status
-			status := "stable"
-			if s.UpdatedReplicas < desired || s.ReadyReplicas < desired {
-				status = "progressing"
-			}
-			if s.CurrentRevision != s.UpdateRevision {
-				status = "progressing"
-			}
-			if s.ReadyReplicas == 0 && desired > 0 {
-				status = "degraded"
-			}
-			statuses = append(statuses, WorkloadStatus{
-				Name:              ss.Name,
-				Namespace:         ss.Namespace,
-				Kind:              "StatefulSet",
-				Replicas:          desired,
-				ReadyReplicas:     s.ReadyReplicas,
-				UpdatedReplicas:   s.UpdatedReplicas,
-				AvailableReplicas: s.ReadyReplicas, // StatefulSets don't have AvailableReplicas
-				RolloutStatus:     status,
-			})
 		}
+		log.Printf("workloads: fetched %d statefulsets via fallback", len(allStatefulSets))
+	}
+
+	for _, ss := range allStatefulSets {
+		desired := int32(1)
+		if ss.Spec.Replicas != nil {
+			desired = *ss.Spec.Replicas
+		}
+		s := ss.Status
+		status := "stable"
+		if s.UpdatedReplicas < desired || s.ReadyReplicas < desired {
+			status = "progressing"
+		}
+		if s.CurrentRevision != s.UpdateRevision {
+			status = "progressing"
+		}
+		if s.ReadyReplicas == 0 && desired > 0 {
+			status = "degraded"
+		}
+		statuses = append(statuses, WorkloadStatus{
+			Name:              ss.Name,
+			Namespace:         ss.Namespace,
+			Kind:              "StatefulSet",
+			Replicas:          desired,
+			ReadyReplicas:     s.ReadyReplicas,
+			UpdatedReplicas:   s.UpdatedReplicas,
+			AvailableReplicas: s.ReadyReplicas,
+			RolloutStatus:     status,
+		})
 	}
 
 	return statuses

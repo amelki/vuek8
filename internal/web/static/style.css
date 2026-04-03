@@ -1967,3 +1967,9 @@ main {
   font-weight: 600;
 }
 
+.tooltip-value.status-running, .tooltip-value.status-ready { color: #3fb950; }
+.tooltip-value.status-pending, .tooltip-value.status-containercreating { color: #d29922; }
+.tooltip-value.status-succeeded, .tooltip-value.status-completed { color: #8b949e; }
+.tooltip-value.status-failed, .tooltip-value.status-error, .tooltip-value.status-crashloopbackoff, .tooltip-value.status-imagepullbackoff, .tooltip-value.status-errimagepull { color: #f85149; }
+.tooltip-value.status-terminating { color: #d29922; }
+

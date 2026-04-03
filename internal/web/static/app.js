@@ -706,7 +706,7 @@ function openDetail(p) {
   html += `<div class="detail-section-title">Pod</div>`;
   html += detailField('Name', p.name);
   html += detailField('Namespace', p.namespace);
-  html += detailField('Status', p.status);
+  html += detailField('Status', p.status, statusFontColor(p.status, true));
   html += detailField('Ready', p.ready);
   if (p.restarts > 0) html += detailField('Restarts', p.restarts);
   html += detailField('Age', p.age);
@@ -735,7 +735,8 @@ function openDetail(p) {
         cpuDetail += ' (no limit)';
       }
     }
-    html += detailField('CPU Usage', cpuDetail);
+    const cpuPct = cpuLim > 0 ? (m.cpuMilli / cpuLim) * 100 : (getNodeCPUMilli(p.node) > 0 ? (m.cpuMilli / getNodeCPUMilli(p.node)) * 100 : 0);
+    html += detailField('CPU Usage', cpuDetail, cpuPct > 0 ? resourceFontColor(cpuPct, true) : null);
     let memDetail = fmtMem(m.memBytes);
     if (memLim > 0) {
       memDetail += ' / ' + fmtMem(memLim) + ' limit (' + Math.round((m.memBytes / memLim) * 100) + '%)';
@@ -747,7 +748,8 @@ function openDetail(p) {
         memDetail += ' (no limit)';
       }
     }
-    html += detailField('Memory Usage', memDetail);
+    const memPct = memLim > 0 ? (m.memBytes / memLim) * 100 : (getNodeMemBytes(p.node) > 0 ? (m.memBytes / getNodeMemBytes(p.node)) * 100 : 0);
+    html += detailField('Memory Usage', memDetail, memPct > 0 ? resourceFontColor(memPct, true) : null);
   } else {
     html += detailField('CPU Request', p.cpuRequestMilli > 0 ? fmtCPU(p.cpuRequestMilli) : '-');
     html += detailField('CPU Limit', p.cpuLimitMilli > 0 ? fmtCPU(p.cpuLimitMilli) : '-');
@@ -1165,8 +1167,9 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
-function detailField(label, value) {
-  return `<div class="detail-field"><span class="detail-field-label">${esc(label)}</span><span class="detail-field-value" title="${esc(String(value))}">${esc(String(value))}</span></div>`;
+function detailField(label, value, colorStyle) {
+  const style = colorStyle ? ` style="color:${colorStyle}"` : '';
+  return `<div class="detail-field"><span class="detail-field-label">${esc(label)}</span><span class="detail-field-value"${style} title="${esc(String(value))}">${esc(String(value))}</span></div>`;
 }
 
 // --- Topology view ---
@@ -1324,9 +1327,17 @@ function resourceColor(pct) {
   return 'background: #f85149;';
 }
 
-function resourceFontColor(pct) {
-  if (pct < 10) return '#238636';
-  if (pct < 30) return '#3fb950';
+function statusFontColor(status, skipGreen) {
+  const s = status.toLowerCase().replace(/[^a-z]/g, '');
+  if (s === 'running' || s === 'ready') return skipGreen ? null : '#3fb950';
+  if (s === 'pending' || s === 'containercreating' || s === 'terminating') return '#d29922';
+  if (s === 'succeeded' || s === 'completed') return '#8b949e';
+  if (s === 'failed' || s === 'error' || s === 'crashloopbackoff' || s === 'imagepullbackoff' || s === 'errimagepull') return '#f85149';
+  return null;
+}
+
+function resourceFontColor(pct, skipGreen) {
+  if (pct < 30) return skipGreen ? null : '#3fb950';
   if (pct < 60) return '#d29922';
   if (pct < 85) return '#da6d28';
   return '#f85149';
