@@ -48,8 +48,12 @@ func (c *Client) FetchWorkloadStatuses(ctx context.Context) []WorkloadStatus {
 		}
 		s := d.Status
 		status := "stable"
-		if s.UpdatedReplicas < desired || s.ReadyReplicas < s.UpdatedReplicas || s.AvailableReplicas < desired {
+		if s.UpdatedReplicas < desired {
+			// Actively rolling out — not all pods have the new template yet
 			status = "progressing"
+		} else if s.ReadyReplicas < desired || s.AvailableReplicas < desired {
+			// All updated but some not ready — degraded, not rolling
+			status = "degraded"
 		}
 		if s.ReadyReplicas == 0 && desired > 0 {
 			status = "degraded"
@@ -92,11 +96,12 @@ func (c *Client) FetchWorkloadStatuses(ctx context.Context) []WorkloadStatus {
 		}
 		s := ss.Status
 		status := "stable"
-		if s.UpdatedReplicas < desired || s.ReadyReplicas < desired {
+		if s.UpdatedReplicas < desired || s.CurrentRevision != s.UpdateRevision {
+			// Actively rolling out
 			status = "progressing"
-		}
-		if s.CurrentRevision != s.UpdateRevision {
-			status = "progressing"
+		} else if s.ReadyReplicas < desired {
+			// All updated but some not ready — degraded
+			status = "degraded"
 		}
 		if s.ReadyReplicas == 0 && desired > 0 {
 			status = "degraded"

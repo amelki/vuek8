@@ -1475,7 +1475,8 @@ function renderTopologyByPods(filtered, filter, mode) {
     if (isRolling) {
       h += `<span class="rollout-badge">${ws.updatedReplicas}/${ws.replicas}</span>`;
     } else if (isDegraded) {
-      h += `<span class="rollout-badge degraded-badge">degraded</span>`;
+      const unavail = ws.replicas - ws.readyReplicas;
+      h += `<span class="rollout-badge degraded-badge">${unavail} unavailable</span>`;
     }
     h += `<span class="topo-machine-stats">${pods.length}</span>`;
     h += `</div>`;
@@ -1605,7 +1606,8 @@ function renderWorkloads() {
   const wlGroup = document.getElementById('workload-group').value;
   const modeMap = {'kind': 'workload-by-kind', 'flat': 'workload-flat', 'by-kind': 'kind'};
 
-  if (workloadsNeedFullLayout || !workloadsEl.hasChildNodes()) {
+  const hasCards = workloadsEl.querySelector('.topo-machine') !== null;
+  if (workloadsNeedFullLayout || !hasCards) {
     // Full layout: recompute masonry from scratch
     const html = renderTopologyByPods(filtered, filter, modeMap[wlGroup] || 'workload-by-kind');
     workloadsEl.innerHTML = html;
@@ -1694,7 +1696,7 @@ function updateWorkloadCardsInPlace(filtered, mode) {
       cardEl.style.minHeight = '';
     }
 
-    // Update/add rollout badge
+    // Update/add rollout or degraded badge
     let badge = cardEl.querySelector('.rollout-badge');
     if (isRolling) {
       if (!badge) {
@@ -1703,7 +1705,18 @@ function updateWorkloadCardsInPlace(filtered, mode) {
         const header = cardEl.querySelector('.topo-machine-header');
         if (header && statsEl) header.insertBefore(badge, statsEl);
       }
+      badge.className = 'rollout-badge';
       badge.textContent = ws.updatedReplicas + '/' + ws.replicas;
+    } else if (isDegraded && ws) {
+      if (!badge) {
+        badge = document.createElement('span');
+        badge.className = 'rollout-badge degraded-badge';
+        const header = cardEl.querySelector('.topo-machine-header');
+        if (header && statsEl) header.insertBefore(badge, statsEl);
+      }
+      badge.className = 'rollout-badge degraded-badge';
+      const unavail = ws.replicas - ws.readyReplicas;
+      badge.textContent = unavail + ' unavailable';
     } else if (badge) {
       badge.remove();
     }
