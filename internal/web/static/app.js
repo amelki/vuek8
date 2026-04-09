@@ -1216,8 +1216,12 @@ function getTopoGroupKey(node) {
   }
 }
 
-function dotClass(status) {
+function dotClass(status, ready) {
   const s = status.toLowerCase().replace(/[^a-z]/g, '');
+  if (s === 'running' && ready) {
+    const parts = ready.split('/');
+    if (parts.length === 2 && parts[0] !== parts[1]) return 'topo-dot topo-dot-notready';
+  }
   const known = ['running','succeeded','completed','pending','containercreating','failed','error','crashloopbackoff','imagepullbackoff','errimagepull','terminating'];
   return 'topo-dot topo-dot-' + (known.includes(s) ? s : 'unknown');
 }
@@ -1411,7 +1415,7 @@ function renderTopologyByNodes(filtered, filter) {
       html += `<div class="topo-machine-resources">${esc(n.cpuCapacity)} CPU &middot; ${esc(n.memoryCapacity)}</div>`;
       html += `<div class="topo-pods">`;
       for (const p of pods) {
-        html += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+        html += `<div class="${dotClass(p.status, p.ready)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
       }
       html += `</div>`;
       html += `</div>`;
@@ -1485,7 +1489,7 @@ function renderTopologyByPods(filtered, filter, mode) {
     }
     h += `<div class="topo-pods">`;
     for (const p of pods) {
-      h += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+      h += `<div class="${dotClass(p.status, p.ready)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
     }
     h += `</div>`;
     if (isRolling && ws.replicas > 0) {
@@ -1742,7 +1746,7 @@ function updateWorkloadCardsInPlace(filtered, mode) {
     if (dotsEl) {
       let dotsHtml = '';
       for (const p of pods) {
-        dotsHtml += `<div class="${dotClass(p.status)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
+        dotsHtml += `<div class="${dotClass(p.status, p.ready)}${dotAnim(p)}" style="${dotStyle(p)}" data-pod-b64="${btoa(JSON.stringify(p))}"></div>`;
       }
       dotsEl.innerHTML = dotsHtml;
       // Re-attach listeners for new dots

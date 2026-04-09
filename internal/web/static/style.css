@@ -1847,6 +1847,7 @@ main {
 }
 
 .topo-dot-running { background: #3fb950; }
+.topo-dot-notready { background: #d29922; }
 .topo-dot-succeeded, .topo-dot-completed { background: #484f58; }
 .topo-dot-pending, .topo-dot-containercreating { background: #d29922; }
 .topo-dot-failed, .topo-dot-error, .topo-dot-crashloopbackoff, .topo-dot-imagepullbackoff, .topo-dot-errimagepull { background: #f85149; }
