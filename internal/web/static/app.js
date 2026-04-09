@@ -1907,8 +1907,12 @@ function attachTopoDotListeners(container) {
 }
 
 function positionTooltip(e) {
-  const x = e.clientX + 12;
-  const y = e.clientY + 12;
+  const gap = 12;
+  const rect = tooltipEl.getBoundingClientRect();
+  let x = e.clientX + gap;
+  let y = e.clientY + gap;
+  if (x + rect.width > window.innerWidth) x = e.clientX - gap - rect.width;
+  if (y + rect.height > window.innerHeight) y = e.clientY - gap - rect.height;
   tooltipEl.style.left = x + 'px';
   tooltipEl.style.top = y + 'px';
 }
