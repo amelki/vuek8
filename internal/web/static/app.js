@@ -248,7 +248,7 @@ function groupBy(pods, keyFn) {
 }
 
 function workloadKey(p) {
-  return p.workloadKind + '/' + (p.workloadName || p.name);
+  return p.workloadKind + '/' + p.namespace + '/' + (p.workloadName || p.name);
 }
 
 // --- Rendering ---
@@ -274,7 +274,7 @@ function getFilteredPods() {
 
   let filtered = allPods;
   if (ns) filtered = filtered.filter(p => p.namespace === ns);
-  if (wl) filtered = filtered.filter(p => (p.workloadKind + '/' + (p.workloadName || p.name)) === wl);
+  if (wl) filtered = filtered.filter(p => workloadKey(p) === wl);
   if (filter) filtered = filtered.filter(p => matchesSearch(p.name, filter));
 
   podCount.textContent = `${filtered.length} pods`;
@@ -288,8 +288,8 @@ function populateWorkloads() {
 
   const workloads = new Map();
   for (const p of pods) {
-    const key = p.workloadKind + '/' + (p.workloadName || p.name);
-    if (!workloads.has(key)) workloads.set(key, { kind: p.workloadKind, name: p.workloadName || p.name });
+    const key = workloadKey(p);
+    if (!workloads.has(key)) workloads.set(key, { kind: p.workloadKind, name: p.workloadName || p.name, namespace: p.namespace });
   }
 
   const current = wlSelect.value;
@@ -372,7 +372,7 @@ function renderByWorkload(pods) {
     const isOpen = isExpanded(kindKey);
 
     // Count unique workloads in this kind
-    const workloadNames = new Set(kindPods.map(p => p.workloadName || p.name));
+    const workloadNames = new Set(kindPods.map(p => p.namespace + '/' + (p.workloadName || p.name)));
 
     html += `<div class="tree-node">`;
     html += `<div class="group-header" data-group="${esc(kindKey)}">`;
@@ -384,11 +384,12 @@ function renderByWorkload(pods) {
     html += `<div class="group-children ${isOpen ? '' : 'collapsed'}">`;
 
     // Second level: individual workloads
-    const byWorkload = groupBy(kindPods, p => p.workloadName || p.name);
+    const byWorkload = groupBy(kindPods, p => p.namespace + '/' + (p.workloadName || p.name));
     const sorted = [...byWorkload.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-    for (const [name, wPods] of sorted) {
+    for (const [wKey, wPods] of sorted) {
+      const name = wPods[0].workloadName || wPods[0].name;
       if (podSearch.value && wPods.length === 0) continue;
-      html += renderGroup(kindKey + '/' + name, wPods, workloadHeaderContent(kind, name, wPods.length), false, true);
+      html += renderGroup(kindKey + '/' + wKey, wPods, workloadHeaderContent(kind, name, wPods.length), false, true);
     }
 
     html += `</div></div>`;
@@ -438,7 +439,7 @@ function renderByWorkloadNode(pods) {
     const kindKey = 'wn-k:' + kind;
     const isKindOpen = isExpanded(kindKey);
 
-    const workloadNames = new Set(kindPods.map(p => p.workloadName || p.name));
+    const workloadNames = new Set(kindPods.map(p => p.namespace + '/' + (p.workloadName || p.name)));
 
     html += `<div class="tree-node">`;
     html += `<div class="group-header" data-group="${esc(kindKey)}">`;
@@ -450,13 +451,14 @@ function renderByWorkloadNode(pods) {
     html += `<div class="group-children ${isKindOpen ? '' : 'collapsed'}">`;
 
     // Second level: individual workloads
-    const byWorkload = groupBy(kindPods, p => p.workloadName || p.name);
+    const byWorkload = groupBy(kindPods, p => p.namespace + '/' + (p.workloadName || p.name));
     const sortedWorkloads = [...byWorkload.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 
-    for (const [wName, wPods] of sortedWorkloads) {
+    for (const [wGroupKey, wPods] of sortedWorkloads) {
+      const wName = wPods[0].workloadName || wPods[0].name;
       if (podSearch.value && wPods.length === 0) continue;
 
-      const wKey = kindKey + '/' + wName;
+      const wKey = kindKey + '/' + wGroupKey;
       const isWOpen = isExpanded(wKey);
       html += `<div class="tree-node nested">`;
       html += `<div class="group-header" data-group="${esc(wKey)}">`;
@@ -1409,7 +1411,7 @@ function renderTopologyByNodes(filtered, filter) {
       if (filter && pods.length === 0) continue;
       html += `<div class="topo-machine" style="${nodeCardStyle(n)}">`;
       html += `<div class="topo-machine-header">`;
-      html += `<span class="topo-machine-name">${esc(n.name)}</span>`;
+      html += `<span class="topo-machine-name" title="${esc(n.name)}">${esc(n.name)}</span>`;
       html += `<span class="topo-machine-stats">${pods.length}</span>`;
       html += `</div>`;
       html += `<div class="topo-machine-resources">${esc(n.cpuCapacity)} CPU &middot; ${esc(n.memoryCapacity)}</div>`;
@@ -1432,7 +1434,7 @@ function renderTopologyByPods(filtered, filter, mode) {
   for (const p of filtered) {
     let key;
     if (mode === 'workload-by-kind' || mode === 'workload-flat') {
-      key = p.workloadName || p.name;
+      key = p.namespace + '/' + (p.workloadName || p.name);
     } else if (mode === 'kind') {
       key = p.workloadKind || 'Pod';
     } else {
@@ -1444,6 +1446,14 @@ function renderTopologyByPods(filtered, filter, mode) {
 
   // Sort by pod count descending
   const sorted = [...cards.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  // Detect workload names that appear in multiple namespaces
+  const nameCount = new Map();
+  for (const [, pods] of sorted) {
+    const n = pods[0] ? (pods[0].workloadName || pods[0].name) : '';
+    nameCount.set(n, (nameCount.get(n) || 0) + 1);
+  }
+  const duplicateNames = new Set([...nameCount.entries()].filter(([, c]) => c > 1).map(([n]) => n));
 
   // Shared layout helpers
   const cardWidth = 180;
@@ -1459,7 +1469,8 @@ function renderTopologyByPods(filtered, filter, mode) {
     return headerHeight + rows * dotSize + cardPadding;
   }
 
-  function renderCard(name, pods, showKind) {
+  function renderCard(cardKey, pods, showKind) {
+    const name = pods[0] ? (pods[0].workloadName || pods[0].name) : cardKey;
     const running = pods.filter(p => p.status === 'Running').length;
     const notRunning = pods.length - running;
     const kindLabel = showKind ? (pods[0].workloadKind || '') : '';
@@ -1469,18 +1480,20 @@ function renderTopologyByPods(filtered, filter, mode) {
     const wsKey = kind + '/' + ns + '/' + name;
     const ws = allWorkloadStatuses[wsKey];
     const isRolling = ws && ws.rolloutStatus === 'progressing';
-    const isDegraded = ws && ws.rolloutStatus === 'degraded';
+    const allPodsReady = pods.length > 0 && pods.every(p => p.status === 'Running' && p.ready && p.ready.split('/')[0] === p.ready.split('/')[1]);
+    const isDegraded = ws && ws.rolloutStatus === 'degraded' && !allPodsReady;
     const cardClass = isRolling ? ' rolling-out' : isDegraded ? ' degraded' : (notRunning > 0 ? ' has-errors' : '');
     const wlData = btoa(JSON.stringify({ name, namespace: ns, kind, podCount: pods.length }));
     let h = '';
     h += `<div class="topo-machine${cardClass}" data-workload="${wlData}">`;
     h += `<div class="topo-machine-header">`;
-    h += `<span class="topo-machine-name">${esc(name)}</span>`;
+    h += `<div class="topo-machine-name-wrap"><span class="topo-machine-name" title="${esc(name)}">${esc(name)}</span>`;
+    if (duplicateNames.has(name)) {
+      h += `<span class="topo-machine-ns">${esc(ns)}</span>`;
+    }
+    h += `</div>`;
     if (isRolling) {
       h += `<span class="rollout-badge">${ws.updatedReplicas}/${ws.replicas}</span>`;
-    } else if (isDegraded) {
-      const unavail = ws.replicas - ws.readyReplicas;
-      h += `<span class="rollout-badge degraded-badge">${unavail} unavailable</span>`;
     }
     h += `<span class="topo-machine-stats">${pods.length}</span>`;
     h += `</div>`;
@@ -1631,7 +1644,7 @@ function updateWorkloadCardsInPlace(filtered, mode) {
   for (const p of filtered) {
     let key;
     if (mode === 'workload-by-kind' || mode === 'workload-flat') {
-      key = p.workloadName || p.name;
+      key = p.namespace + '/' + (p.workloadName || p.name);
     } else if (mode === 'kind') {
       key = p.workloadKind || 'Pod';
     } else {
@@ -1643,11 +1656,12 @@ function updateWorkloadCardsInPlace(filtered, mode) {
 
   // Find all card elements and update their contents
   workloadsEl.querySelectorAll('.topo-machine').forEach(cardEl => {
-    const nameEl = cardEl.querySelector('.topo-machine-name');
-    if (!nameEl) return;
-    const name = nameEl.textContent;
-    const pods = cards.get(name);
+    if (!cardEl.dataset.workload) return;
+    const wlData = JSON.parse(atob(cardEl.dataset.workload));
+    const cardKey = wlData.namespace + '/' + wlData.name;
+    const pods = cards.get(cardKey);
     if (!pods) return;
+    const name = wlData.name;
 
     // Update pod count
     const statsEl = cardEl.querySelector('.topo-machine-stats');
@@ -1660,12 +1674,13 @@ function updateWorkloadCardsInPlace(filtered, mode) {
     const kindLabel = pods[0] ? (pods[0].workloadKind || '') : '';
 
     // Check rollout status
-    const ns = pods[0] ? pods[0].namespace : 'default';
-    const kind = pods[0] ? (pods[0].workloadKind || 'Deployment') : 'Deployment';
+    const ns = wlData.namespace;
+    const kind = wlData.kind;
     const wsKey = kind + '/' + ns + '/' + name;
     const ws = allWorkloadStatuses[wsKey];
     const isRolling = ws && ws.rolloutStatus === 'progressing';
-    const isDegraded = ws && ws.rolloutStatus === 'degraded';
+    const allPodsReady = pods.length > 0 && pods.every(p => p.status === 'Running' && p.ready && p.ready.split('/')[0] === p.ready.split('/')[1]);
+    const isDegraded = ws && ws.rolloutStatus === 'degraded' && !allPodsReady;
 
     if (resEl) {
       resEl.textContent = kindLabel || '';
@@ -1700,7 +1715,7 @@ function updateWorkloadCardsInPlace(filtered, mode) {
       cardEl.style.minHeight = '';
     }
 
-    // Update/add rollout or degraded badge
+    // Update/add rollout badge
     let badge = cardEl.querySelector('.rollout-badge');
     if (isRolling) {
       if (!badge) {
@@ -1711,16 +1726,6 @@ function updateWorkloadCardsInPlace(filtered, mode) {
       }
       badge.className = 'rollout-badge';
       badge.textContent = ws.updatedReplicas + '/' + ws.replicas;
-    } else if (isDegraded && ws) {
-      if (!badge) {
-        badge = document.createElement('span');
-        badge.className = 'rollout-badge degraded-badge';
-        const header = cardEl.querySelector('.topo-machine-header');
-        if (header && statsEl) header.insertBefore(badge, statsEl);
-      }
-      badge.className = 'rollout-badge degraded-badge';
-      const unavail = ws.replicas - ws.readyReplicas;
-      badge.textContent = unavail + ' unavailable';
     } else if (badge) {
       badge.remove();
     }

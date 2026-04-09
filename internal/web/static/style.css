@@ -1805,7 +1805,7 @@ main {
 
 .topo-machine-header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 6px;
 }
@@ -1817,6 +1817,23 @@ main {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.topo-machine-name-wrap {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.topo-machine-ns {
+  font-size: 9.5px;
+  color: #6e7681;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+  line-height: 1;
+  margin-top: 2px;
 }
 
 .topo-machine-stats {

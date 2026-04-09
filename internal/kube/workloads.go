@@ -47,12 +47,17 @@ func (c *Client) FetchWorkloadStatuses(ctx context.Context) []WorkloadStatus {
 			desired = *d.Spec.Replicas
 		}
 		s := d.Status
+		// Check if Kubernetes considers the rollout still in progress
+		rolloutActive := false
+		for _, cond := range s.Conditions {
+			if cond.Type == appsv1.DeploymentProgressing && cond.Status == "True" && cond.Reason != "NewReplicaSetAvailable" {
+				rolloutActive = true
+			}
+		}
 		status := "stable"
-		if s.UpdatedReplicas < desired {
-			// Actively rolling out — not all pods have the new template yet
+		if s.UpdatedReplicas < desired || rolloutActive {
 			status = "progressing"
 		} else if s.ReadyReplicas < desired || s.AvailableReplicas < desired {
-			// All updated but some not ready — degraded, not rolling
 			status = "degraded"
 		}
 		if s.ReadyReplicas == 0 && desired > 0 {
@@ -96,11 +101,11 @@ func (c *Client) FetchWorkloadStatuses(ctx context.Context) []WorkloadStatus {
 		}
 		s := ss.Status
 		status := "stable"
-		if s.UpdatedReplicas < desired || s.CurrentRevision != s.UpdateRevision {
-			// Actively rolling out
+		if s.CurrentRevision != s.UpdateRevision {
+			// Actively rolling out — new revision not yet current
 			status = "progressing"
-		} else if s.ReadyReplicas < desired {
-			// All updated but some not ready — degraded
+		} else if s.UpdatedReplicas < desired || s.ReadyReplicas < desired {
+			// Revision matches but not all replicas updated/ready — degraded
 			status = "degraded"
 		}
 		if s.ReadyReplicas == 0 && desired > 0 {
