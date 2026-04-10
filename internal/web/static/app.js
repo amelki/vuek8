@@ -712,7 +712,7 @@ function openDetail(p) {
   html += detailField('Ready', p.ready);
   if (p.restarts > 0) html += detailField('Restarts', p.restarts);
   html += detailField('Age', p.age);
-  html += detailField('Node', p.node);
+  html += `<div class="detail-field"><span class="detail-field-label">Node</span><a class="detail-field-value detail-node-link" href="#" data-node="${esc(p.node)}">${esc(p.node)}</a></div>`;
   html += `</div>`;
 
   // Resources
@@ -765,7 +765,7 @@ function openDetail(p) {
     html += `<div class="detail-section">`;
     html += `<div class="detail-section-title">Workload</div>`;
     html += detailField('Kind', p.workloadKind);
-    html += detailField('Name', p.workloadName);
+    html += `<div class="detail-field"><span class="detail-field-label">Name</span><a class="detail-field-value detail-workload-link" href="#" data-workload-ns="${esc(p.namespace)}" data-workload-name="${esc(p.workloadName)}">${esc(p.workloadName)}</a></div>`;
     html += `</div>`;
   }
 
@@ -809,6 +809,24 @@ function openDetail(p) {
 
   detailBody.innerHTML = html;
   detailPanel.classList.remove('hidden');
+
+  // Wire up node link
+  const nodeLink = detailBody.querySelector('.detail-node-link');
+  if (nodeLink) {
+    nodeLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigateToNode(nodeLink.dataset.node);
+    });
+  }
+
+  // Wire up workload link
+  const wlLink = detailBody.querySelector('.detail-workload-link');
+  if (wlLink) {
+    wlLink.addEventListener('click', (e) => {
+      e.preventDefault();
+      navigateToWorkload(wlLink.dataset.workloadNs, wlLink.dataset.workloadName);
+    });
+  }
 
   // Load logs
   loadLogs();
@@ -1409,7 +1427,7 @@ function renderTopologyByNodes(filtered, filter) {
     for (const n of nodes) {
       const pods = podsByNode.get(n.name) || [];
       if (filter && pods.length === 0) continue;
-      html += `<div class="topo-machine" style="${nodeCardStyle(n)}">`;
+      html += `<div class="topo-machine" data-node="${esc(n.name)}" style="${nodeCardStyle(n)}">`;
       html += `<div class="topo-machine-header">`;
       html += `<span class="topo-machine-name" title="${esc(n.name)}">${esc(n.name)}</span>`;
       html += `<span class="topo-machine-stats">${pods.length}</span>`;
@@ -1945,6 +1963,46 @@ function switchTab(tab) {
   updateExpandToggle();
   render();
   saveSessionState();
+}
+
+function navigateToNode(nodeName) {
+  switchTab('nodes');
+  // Allow DOM to render, then find and scroll to the node card
+  requestAnimationFrame(() => {
+    const card = topoEl.querySelector(`.topo-machine[data-node="${CSS.escape(nodeName)}"]`);
+    if (!card) return;
+    // Expand the pool if collapsed
+    const pool = card.closest('.topo-pool');
+    if (pool) {
+      const content = pool.querySelector('.topo-pool-content');
+      if (content && content.classList.contains('pool-collapsed')) {
+        const header = pool.querySelector('.topo-pool-header');
+        if (header) header.click();
+      }
+    }
+    card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    card.classList.add('node-highlight');
+    setTimeout(() => card.classList.remove('node-highlight'), 2500);
+  });
+}
+
+function navigateToWorkload(ns, name) {
+  switchTab('workloads');
+  requestAnimationFrame(() => {
+    // Find the card whose data-workload matches namespace + name
+    const cards = workloadsEl.querySelectorAll('.topo-machine[data-workload]');
+    for (const card of cards) {
+      try {
+        const d = JSON.parse(atob(card.dataset.workload));
+        if (d.name === name && d.namespace === ns) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          card.classList.add('node-highlight');
+          setTimeout(() => card.classList.remove('node-highlight'), 2500);
+          return;
+        }
+      } catch (e) {}
+    }
+  });
 }
 
 function render() {

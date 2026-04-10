@@ -1503,6 +1503,23 @@ main {
   color: #58a6ff;
 }
 
+.detail-node-link, .detail-workload-link {
+  color: #58a6ff;
+  text-decoration: none;
+  cursor: pointer;
+}
+.detail-node-link:hover, .detail-workload-link:hover {
+  text-decoration: underline;
+}
+
+.node-highlight {
+  animation: node-flash 2.5s ease-out;
+}
+@keyframes node-flash {
+  0%, 20% { box-shadow: 0 0 0 2px #58a6ff; }
+  100% { box-shadow: none; }
+}
+
 .pod-actions-menu {
   position: fixed;
   background: #1c2128;
