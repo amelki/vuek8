@@ -50,6 +50,7 @@
         <button class="tab active" data-tab="nodes">Nodes</button>
         <button class="tab" data-tab="workloads">Workloads</button>
         <button class="tab" data-tab="pods">Pods</button>
+        <span id="sync-spinner" class="sync-spinner hidden"></span>
         <div id="progress-bar" class="progress-bar hidden">
           <div class="progress-track">
             <div id="progress-fill" class="progress-fill"></div>
@@ -106,6 +107,7 @@
     </div>
   </div>
   <div id="detail-panel" class="detail-panel hidden">
+    <div id="detail-resize-handle" class="detail-resize-handle"></div>
     <div class="detail-header">
       <button id="detail-actions-btn" class="detail-header-btn" title="Actions">&#8942;</button>
       <span id="detail-title" class="detail-title"></span>

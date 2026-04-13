@@ -310,6 +310,9 @@ func podStatus(pod corev1.Pod) string {
 			return cs.State.Waiting.Reason
 		}
 		if cs.State.Terminated != nil {
+			if cs.State.Terminated.ExitCode == 0 {
+				return "Succeeded"
+			}
 			return cs.State.Terminated.Reason
 		}
 	}

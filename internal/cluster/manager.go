@@ -90,7 +90,15 @@ func NewManager(initialKubeconfig string) (*Manager, error) {
 	return mgr, nil
 }
 
+func (m *Manager) RefreshDiscovery() {
+	fresh := Discover()
+	m.mu.Lock()
+	m.discovered = fresh
+	m.mu.Unlock()
+}
+
 func (m *Manager) ListClusters() []ClusterInfo {
+	m.RefreshDiscovery()
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

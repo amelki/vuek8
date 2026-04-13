@@ -97,36 +97,46 @@ function hideProgress() {
 }
 
 function showSkeleton() {
-  if (activeTab !== 'nodes') return;
-  // Generate fake topology cards
-  const pools = [
-    { name: '', nodes: 4, dotsPerNode: 6 },
-    { name: '', nodes: 3, dotsPerNode: 0 },
-    { name: '', nodes: 5, dotsPerNode: [45, 30, 35, 25, 40] },
-    { name: '', nodes: 4, dotsPerNode: [20, 15, 25, 18] },
-  ];
-  let html = '';
-  for (const pool of pools) {
-    html += `<div class="topo-pool skeleton-pool">`;
-    html += `<div class="topo-pool-header"><span class="skeleton-text skeleton-w120"></span> <span class="skeleton-text skeleton-w80"></span></div>`;
-    html += `<div class="topo-machines">`;
-    for (let i = 0; i < pool.nodes; i++) {
-      const dotCount = Array.isArray(pool.dotsPerNode) ? pool.dotsPerNode[i] : pool.dotsPerNode;
+  // Generate skeleton cards for whichever tab is visible
+  function skeletonCards(count, dotsPerCard) {
+    let html = '';
+    for (let i = 0; i < count; i++) {
+      const dots = Array.isArray(dotsPerCard) ? dotsPerCard[i] : dotsPerCard;
       html += `<div class="topo-machine skeleton-card">`;
       html += `<div class="topo-machine-header"><span class="skeleton-text skeleton-w100"></span><span class="skeleton-text skeleton-w30"></span></div>`;
       html += `<div class="topo-machine-resources"><span class="skeleton-text skeleton-w80"></span></div>`;
-      if (dotCount > 0) {
+      if (dots > 0) {
         html += `<div class="topo-pods">`;
-        for (let d = 0; d < dotCount; d++) {
+        for (let d = 0; d < dots; d++) {
           html += `<div class="topo-dot skeleton-dot"></div>`;
         }
         html += `</div>`;
       }
       html += `</div>`;
     }
-    html += `</div></div>`;
+    return html;
   }
-  topoEl.innerHTML = html;
+
+  // Nodes tab: skeleton with pool groups
+  const pools = [
+    { nodes: 4, dots: 6 },
+    { nodes: 3, dots: 0 },
+    { nodes: 5, dots: [45, 30, 35, 25, 40] },
+    { nodes: 4, dots: [20, 15, 25, 18] },
+  ];
+  let nodesHtml = '';
+  for (const pool of pools) {
+    nodesHtml += `<div class="topo-pool skeleton-pool">`;
+    nodesHtml += `<div class="topo-pool-header"><span class="skeleton-text skeleton-w120"></span> <span class="skeleton-text skeleton-w80"></span></div>`;
+    nodesHtml += `<div class="topo-machines">${skeletonCards(pool.nodes, pool.dots)}</div></div>`;
+  }
+  topoEl.innerHTML = nodesHtml;
+
+  // Workloads tab: skeleton with flat cards
+  let wlHtml = `<div class="topo-pool skeleton-pool">`;
+  wlHtml += `<div class="topo-pool-header"><span class="skeleton-text skeleton-w120"></span> <span class="skeleton-text skeleton-w80"></span></div>`;
+  wlHtml += `<div class="topo-machines">${skeletonCards(12, [40, 30, 25, 20, 15, 12, 10, 8, 8, 6, 5, 4])}</div></div>`;
+  workloadsEl.innerHTML = wlHtml;
 }
 
 function hideSkeleton() {
@@ -145,12 +155,21 @@ function hideErrorBanner() {
   errorBanner.classList.add('hidden');
 }
 
+const syncSpinner = document.getElementById('sync-spinner');
+
+function showSyncing() {
+  syncSpinner.classList.remove('hidden');
+}
+
+function hideSyncing() {
+  syncSpinner.classList.add('hidden');
+}
+
 // Wait for cache to be ready, showing progress
 async function waitForCache() {
-  showProgress(5, 'Connecting to cluster...');
   let shownCachedData = false;
   let fakeProgress = 5;
-  showSkeleton();
+  let hasDiskCache = false;
   while (true) {
     try {
       const p = await fetchJSON('/api/progress');
@@ -158,12 +177,24 @@ async function waitForCache() {
       // If ready (even from disk cache), load and show data immediately
       if (p.ready && !shownCachedData) {
         shownCachedData = true;
-        // Load cached data right away
+        hasDiskCache = true;
         await loadDataQuiet();
+        // Show subtle spinner instead of progress bar
+        hideProgress();
+        showSyncing();
+      }
+
+      if (!shownCachedData && !hasDiskCache) {
+        // No cache — show full progress bar and skeleton
+        if (fakeProgress === 5) {
+          showProgress(5, 'Connecting to cluster...');
+          showSkeleton();
+        }
       }
 
       if (p.error) {
         hideProgress();
+        hideSyncing();
         showErrorBanner(p.error);
         return;
       }
@@ -171,24 +202,28 @@ async function waitForCache() {
       // If live data is loaded (not just disk cache), we're done
       if (p.ready && !p.loading) {
         hideProgress();
+        hideSyncing();
         hideErrorBanner();
         return;
       }
 
-      // Still loading live data — show progress
-      // Fake progress that slowly approaches 90% but never reaches it
+      // Still loading — update progress bar only if no disk cache
       fakeProgress += (90 - fakeProgress) * 0.08;
-      if (p.total > 0) {
-        const realPct = Math.round((p.current / p.total) * 100);
-        const pct = Math.max(fakeProgress, realPct);
-        showProgress(pct, `Refreshing... (${p.current}/${p.total})`);
-      } else if (shownCachedData) {
-        showProgress(fakeProgress, 'Refreshing live data...');
-      } else {
-        showProgress(fakeProgress, 'Loading cluster data...');
+      if (!hasDiskCache) {
+        if (p.total > 0) {
+          const realPct = Math.round((p.current / p.total) * 100);
+          const pct = Math.max(fakeProgress, realPct);
+          showProgress(pct, `Loading... (${p.current}/${p.total})`);
+        } else {
+          showProgress(fakeProgress, 'Loading cluster data...');
+        }
       }
     } catch (e) {
       // server not ready yet
+      if (!hasDiskCache && fakeProgress === 5) {
+        showProgress(5, 'Connecting to cluster...');
+        showSkeleton();
+      }
     }
     await new Promise(r => setTimeout(r, 300));
   }
@@ -1173,9 +1208,12 @@ function toggleLogsFullscreen() {
   detailPanel.classList.toggle('logs-fullscreen');
   const btn = document.getElementById('logs-fullscreen-btn');
   if (detailPanel.classList.contains('logs-fullscreen')) {
+    detailPanel.dataset.prevWidth = detailPanel.style.width || '';
+    detailPanel.style.width = '';
     btn.innerHTML = '&#x2716;';
     btn.title = 'Collapse logs';
   } else {
+    detailPanel.style.width = detailPanel.dataset.prevWidth || '';
     btn.innerHTML = '&#x26F6;';
     btn.title = 'Expand logs';
   }
@@ -1353,9 +1391,9 @@ function resourceColor(pct) {
 
 function statusFontColor(status, skipGreen) {
   const s = status.toLowerCase().replace(/[^a-z]/g, '');
-  if (s === 'running' || s === 'ready') return skipGreen ? null : '#3fb950';
+  if (s === 'running' || s === 'ready' || s === 'succeeded') return skipGreen ? null : '#3fb950';
   if (s === 'pending' || s === 'containercreating' || s === 'terminating') return '#d29922';
-  if (s === 'succeeded' || s === 'completed') return '#8b949e';
+  if (s === 'completed') return '#8b949e';
   if (s === 'failed' || s === 'error' || s === 'crashloopbackoff' || s === 'imagepullbackoff' || s === 'errimagepull') return '#f85149';
   return null;
 }
@@ -1641,7 +1679,7 @@ function renderWorkloads() {
   const wlGroup = document.getElementById('workload-group').value;
   const modeMap = {'kind': 'workload-by-kind', 'flat': 'workload-flat', 'by-kind': 'kind'};
 
-  const hasCards = workloadsEl.querySelector('.topo-machine') !== null;
+  const hasCards = workloadsEl.querySelector('.topo-machine:not(.skeleton-card)') !== null;
   if (workloadsNeedFullLayout || !hasCards) {
     // Full layout: recompute masonry from scratch
     const html = renderTopologyByPods(filtered, filter, modeMap[wlGroup] || 'workload-by-kind');
@@ -2060,6 +2098,38 @@ document.querySelectorAll('.tab').forEach(t => {
   t.addEventListener('click', () => switchTab(t.dataset.tab));
 });
 document.getElementById('detail-close').addEventListener('click', closeDetail);
+
+// Detail panel resize
+(function() {
+  const handle = document.getElementById('detail-resize-handle');
+  let dragging = false;
+  let startX, startWidth;
+
+  handle.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    dragging = true;
+    startX = e.clientX;
+    startWidth = detailPanel.offsetWidth;
+    handle.classList.add('active');
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!dragging) return;
+    const delta = startX - e.clientX;
+    const newWidth = Math.max(300, Math.min(startWidth + delta, window.innerWidth * 0.8));
+    detailPanel.style.width = newWidth + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false;
+    handle.classList.remove('active');
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  });
+})();
 document.getElementById('detail-actions-btn').addEventListener('click', (e) => {
   e.stopPropagation();
   showPodActionsMenu(e);
@@ -2406,11 +2476,14 @@ async function switchCluster(id) {
   try {
     hideProgress();
     hideErrorBanner();
-    showProgress(0, 'Switching cluster...');
+    hideSyncing();
     allNodes = [];
     allPods = [];
+    allWorkloadStatuses = {};
+    allMetrics = {};
     animEnabled = false;
     prevPodState.clear();
+    workloadsNeedFullLayout = true;
     render();
 
     await fetch(apiURL('/api/clusters/switch'), {
@@ -2421,12 +2494,14 @@ async function switchCluster(id) {
 
     await loadClusters();
     await waitForCache();
+    hideSyncing();
     await loadClusters(); // reload to pick up error state
     await loadNamespaces();
     await refresh();
   } catch (e) {
     console.error('switch failed:', e);
     hideProgress();
+    hideSyncing();
     await loadClusters();
   }
 }
@@ -2905,6 +2980,7 @@ function showToast(msg) {
   checkForUpdate();
   await loadClusters();
   await waitForCache();
+  hideSyncing();
   await loadNamespaces();
   await refresh();
   setInterval(refresh, 3000);
