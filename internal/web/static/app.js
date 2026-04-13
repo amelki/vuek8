@@ -61,6 +61,46 @@ function esc(s) {
   return d.innerHTML;
 }
 
+// Convert ANSI escape codes to HTML spans
+const ansiColors = {
+  30: '#666', 31: '#f85149', 32: '#3fb950', 33: '#d29922',
+  34: '#58a6ff', 35: '#bc8cff', 36: '#76e3ea', 37: '#c9d1d9',
+  90: '#8b949e', 91: '#ff7b72', 92: '#56d364', 93: '#e3b341',
+  94: '#79c0ff', 95: '#d2a8ff', 96: '#a5d6ff', 97: '#f0f6fc',
+};
+
+function ansiToHtml(text) {
+  let html = '';
+  let open = false;
+  let i = 0;
+  while (i < text.length) {
+    // Match ESC[ ... m
+    if (text.charCodeAt(i) === 0x1b && text[i + 1] === '[') {
+      const end = text.indexOf('m', i + 2);
+      if (end !== -1) {
+        const codes = text.slice(i + 2, end).split(';').map(Number);
+        if (open) { html += '</span>'; open = false; }
+        for (const code of codes) {
+          if (code === 0 || code === 39) { /* reset */ }
+          else if (code === 1) { html += '<span style="font-weight:bold">'; open = true; }
+          else if (ansiColors[code]) { html += `<span style="color:${ansiColors[code]}">`; open = true; }
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    // Escape HTML characters
+    const ch = text[i];
+    if (ch === '<') html += '&lt;';
+    else if (ch === '>') html += '&gt;';
+    else if (ch === '&') html += '&amp;';
+    else html += ch;
+    i++;
+  }
+  if (open) html += '</span>';
+  return html;
+}
+
 // Build a map of node name -> NodeInfo for quick lookup
 function nodeMap() {
   const m = new Map();
@@ -886,7 +926,8 @@ async function loadLogs(tail) {
       logsEl.textContent = `Error: ${await res.text()}`;
       return;
     }
-    logsEl.textContent = await res.text() || '(no logs)';
+    const raw = await res.text();
+    logsEl.innerHTML = raw ? ansiToHtml(raw) : '(no logs)';
     logsEl.scrollTop = logsEl.scrollHeight;
   } catch (e) {
     logsEl.textContent = `Error: ${e.message}`;
@@ -944,7 +985,7 @@ function startTail() {
       tailLines = tailLines.slice(-2000);
     }
     pendingLines = [];
-    logsEl.textContent = tailLines.join('\n');
+    logsEl.innerHTML = ansiToHtml(tailLines.join('\n'));
     logsEl.scrollTop = logsEl.scrollHeight;
   }
 
@@ -996,7 +1037,7 @@ function togglePause() {
     }
     tailBuffer = [];
     if (logsEl) {
-      logsEl.textContent = tailLines.join('\n');
+      logsEl.innerHTML = ansiToHtml(tailLines.join('\n'));
       logsEl.scrollTop = logsEl.scrollHeight;
     }
     if (pauseBtn) pauseBtn.textContent = 'Pause';
@@ -1028,6 +1069,8 @@ function showPodActionsMenu(e) {
 
   const p = currentDetailPod;
   const items = [
+    { label: 'Copy pod link', action: () => copyPodLink(p) },
+    { sep: true },
     { label: 'Open shell in terminal', action: () => openTerminalExec() },
     { label: 'Copy shell command', action: () => copyTerminalCmd('exec') },
     { sep: true },
@@ -1071,6 +1114,68 @@ function closePodActionsMenu() {
     podActionsMenu.remove();
     podActionsMenu = null;
   }
+}
+
+function podLink(p) {
+  const path = 'pod/' + encodeURIComponent(p.namespace) + '/' + encodeURIComponent(p.name);
+  return 'https://vuek8.app/open#' + path;
+}
+
+function copyPodLink(p) {
+  navigator.clipboard.writeText(podLink(p)).then(() => showToast('Pod link copied'));
+}
+
+function showPodContextMenu(p, e) {
+  e.preventDefault();
+  closePodActionsMenu();
+
+  const menu = document.createElement('div');
+  menu.className = 'pod-actions-menu';
+  menu.style.left = e.clientX + 'px';
+  menu.style.top = e.clientY + 'px';
+
+  const items = [
+    { label: 'View details', action: () => openDetail(p) },
+    { label: 'Copy pod link', action: () => copyPodLink(p) },
+    { sep: true },
+    { label: 'Copy shell command', action: () => { currentDetailPod = p; copyTerminalCmd('exec'); } },
+    { label: 'Copy tail command', action: () => { currentDetailPod = p; copyTerminalCmd('logs'); } },
+  ];
+  if (appSettings.allowActions) {
+    items.push({ sep: true });
+    items.push({ label: 'Delete pod', action: () => confirmDeletePod(p), danger: true });
+  }
+
+  for (const item of items) {
+    if (item.sep) {
+      const sep = document.createElement('div');
+      sep.className = 'pod-actions-sep';
+      menu.appendChild(sep);
+      continue;
+    }
+    const el = document.createElement('div');
+    el.className = 'pod-actions-item' + (item.danger ? ' danger' : '');
+    el.textContent = item.label;
+    el.addEventListener('click', () => {
+      closePodActionsMenu();
+      item.action();
+    });
+    menu.appendChild(el);
+  }
+
+  document.body.appendChild(menu);
+  podActionsMenu = menu;
+
+  // Flip menu if it overflows viewport
+  requestAnimationFrame(() => {
+    const rect = menu.getBoundingClientRect();
+    if (rect.right > window.innerWidth) menu.style.left = (e.clientX - rect.width) + 'px';
+    if (rect.bottom > window.innerHeight) menu.style.top = (e.clientY - rect.height) + 'px';
+  });
+
+  setTimeout(() => {
+    document.addEventListener('click', closePodActionsMenu, { once: true });
+  }, 0);
 }
 
 async function confirmDeletePod(p) {
@@ -1964,6 +2069,7 @@ function attachTopoDotListeners(container) {
     el.addEventListener('mousemove', positionTooltip);
     el.addEventListener('mouseleave', () => { clearTimeout(tooltipTimer); tooltipEl.classList.add('hidden'); });
     el.addEventListener('click', () => { clearTimeout(tooltipTimer); tooltipEl.classList.add('hidden'); openDetail(JSON.parse(atob(el.dataset.podB64))); });
+    el.addEventListener('contextmenu', (e) => { clearTimeout(tooltipTimer); tooltipEl.classList.add('hidden'); showPodContextMenu(JSON.parse(atob(el.dataset.podB64)), e); });
   });
 }
 
@@ -2994,4 +3100,30 @@ function showToast(msg) {
       setTimeout(() => showToast('Press R to start/stop a rollout demo'), 2000);
     }
   } catch(e) {}
+
+  // Deep link: #pod/<namespace>/<name> or vuek8://pod/<namespace>/<name>
+  handleDeepLink();
+  window.addEventListener('hashchange', handleDeepLink);
+
+  // Listen for deep links from Wails (desktop app)
+  if (window.runtime && window.runtime.EventsOn) {
+    window.runtime.EventsOn('deep-link', (path) => {
+      window.location.hash = '#' + path;
+    });
+  }
 })();
+
+function handleDeepLink() {
+  const hash = window.location.hash;
+  if (!hash.startsWith('#pod/')) return;
+  const parts = hash.slice(5).split('/');
+  if (parts.length < 2) return;
+  const ns = decodeURIComponent(parts[0]);
+  const name = decodeURIComponent(parts[1]);
+  const pod = allPods.find(p => p.namespace === ns && p.name === name);
+  if (pod) {
+    openDetail(pod);
+    // Clear hash so it doesn't re-trigger
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+  }
+}
