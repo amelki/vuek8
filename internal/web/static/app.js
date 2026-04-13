@@ -3328,26 +3328,29 @@ async function resolveDeepLink(ns, name, server) {
   if (pod) {
     openDetail(pod);
     pendingDeepLink = null;
-  } else if (allPods.length === 0) {
-    // Data not loaded yet — retry after next refresh
-    pendingDeepLink = { ns, name, server };
   } else {
-    // Pod not found in current data — open with minimal info
-    openDetail({
-      name: name,
-      namespace: ns,
-      status: 'Unknown',
-      ready: '-',
-      restarts: 0,
-      age: '-',
-      node: '-',
-      containers: [],
-      workloadName: '',
-      workloadKind: '',
-      cpuRequestMilli: 0, cpuLimitMilli: 0,
-      memRequestBytes: 0, memLimitBytes: 0,
-    });
-    pendingDeepLink = null;
+    // Track retries — keep trying for a few refresh cycles
+    const retries = (pendingDeepLink && pendingDeepLink.retries) || 0;
+    if (retries < 10) {
+      pendingDeepLink = { ns, name, server, retries: retries + 1 };
+    } else {
+      // Give up — open with minimal info
+      openDetail({
+        name: name,
+        namespace: ns,
+        status: 'Unknown',
+        ready: '-',
+        restarts: 0,
+        age: '-',
+        node: '-',
+        containers: [],
+        workloadName: '',
+        workloadKind: '',
+        cpuRequestMilli: 0, cpuLimitMilli: 0,
+        memRequestBytes: 0, memLimitBytes: 0,
+      });
+      pendingDeepLink = null;
+    }
   }
 }
 
