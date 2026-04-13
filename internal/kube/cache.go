@@ -8,8 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
+	"unicode"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,6 +19,38 @@ import (
 	"k8s.io/client-go/informers"
 	"k8s.io/client-go/tools/cache"
 )
+
+// naturalLess compares two strings with natural number ordering:
+// "node-2" < "node-10", "app-1a" < "app-1b"
+func naturalLess(a, b string) bool {
+	i, j := 0, 0
+	for i < len(a) && j < len(b) {
+		ca, cb := rune(a[i]), rune(b[j])
+		aDigit, bDigit := unicode.IsDigit(ca), unicode.IsDigit(cb)
+		if aDigit && bDigit {
+			// Extract full number from both strings
+			ai, bi := i, j
+			for i < len(a) && unicode.IsDigit(rune(a[i])) {
+				i++
+			}
+			for j < len(b) && unicode.IsDigit(rune(b[j])) {
+				j++
+			}
+			na, _ := strconv.Atoi(a[ai:i])
+			nb, _ := strconv.Atoi(b[bi:j])
+			if na != nb {
+				return na < nb
+			}
+		} else {
+			if ca != cb {
+				return ca < cb
+			}
+			i++
+			j++
+		}
+	}
+	return len(a) < len(b)
+}
 
 type Cache struct {
 	client    *Client
@@ -413,12 +447,12 @@ func (c *Cache) rebuildFromInformers(
 		}
 	}
 	pods := c.client.convertPods(allPods)
-	// Stable sort so pod order doesn't shuffle between rebuilds
+	// Stable natural sort so pod order doesn't shuffle between rebuilds
 	sort.Slice(pods, func(i, j int) bool {
 		if pods[i].Namespace != pods[j].Namespace {
-			return pods[i].Namespace < pods[j].Namespace
+			return naturalLess(pods[i].Namespace, pods[j].Namespace)
 		}
-		return pods[i].Name < pods[j].Name
+		return naturalLess(pods[i].Name, pods[j].Name)
 	})
 
 	// Rebuild nodes
@@ -431,9 +465,18 @@ func (c *Cache) rebuildFromInformers(
 		}
 	}
 	nodes := c.client.buildNodes(&nodeList)
+	sort.Slice(nodes, func(i, j int) bool {
+		return naturalLess(nodes[i].Name, nodes[j].Name)
+	})
 
 	// Rebuild workload statuses
 	workloads := c.buildWorkloadStatuses(deployInformers, stsInformers)
+	sort.Slice(workloads, func(i, j int) bool {
+		if workloads[i].Namespace != workloads[j].Namespace {
+			return naturalLess(workloads[i].Namespace, workloads[j].Namespace)
+		}
+		return naturalLess(workloads[i].Name, workloads[j].Name)
+	})
 
 	c.mu.Lock()
 	c.pods = pods

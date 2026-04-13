@@ -772,10 +772,24 @@ function splitOnce(s, sep) {
 
 // --- Detail panel ---
 
+function highlightSelectedDot(p) {
+  document.querySelectorAll('.topo-dot-selected').forEach(el => el.classList.remove('topo-dot-selected'));
+  if (!p) return;
+  document.querySelectorAll('.topo-dot[data-pod-b64]').forEach(el => {
+    try {
+      const d = JSON.parse(atob(el.dataset.podB64));
+      if (d.namespace === p.namespace && d.name === p.name) {
+        el.classList.add('topo-dot-selected');
+      }
+    } catch(e) {}
+  });
+}
+
 function openDetail(p) {
   stopTail();
   detailTitle.textContent = p.name;
   currentDetailPod = p;
+  highlightSelectedDot(p);
 
   let html = '';
 
@@ -1309,6 +1323,7 @@ function closeDetail() {
   stopTail();
   detailPanel.classList.add('hidden');
   detailPanel.classList.remove('logs-fullscreen');
+  highlightSelectedDot(null);
   currentDetailPod = null;
 }
 
@@ -1779,6 +1794,7 @@ function renderNodes() {
   topoEl.innerHTML = html;
   attachTopoDotListeners(topoEl);
   attachPoolToggleListeners(topoEl);
+  if (currentDetailPod) highlightSelectedDot(currentDetailPod);
 }
 
 function renderWorkloads() {
@@ -1796,6 +1812,7 @@ function renderWorkloads() {
     attachPoolToggleListeners(workloadsEl);
     attachWorkloadCardListeners(workloadsEl);
     workloadsNeedFullLayout = false;
+    if (currentDetailPod) highlightSelectedDot(currentDetailPod);
   } else {
     // Incremental: update card contents in place
     updateWorkloadCardsInPlace(filtered, modeMap[wlGroup] || 'workload-by-kind');
@@ -1930,6 +1947,10 @@ function updateWorkloadCardsInPlace(filtered, mode) {
           const p = JSON.parse(atob(el.dataset.podB64));
           tooltipEl.classList.add('hidden');
           openDetail(p);
+        });
+        el.addEventListener('contextmenu', (e) => {
+          tooltipEl.classList.add('hidden');
+          showPodContextMenu(JSON.parse(atob(el.dataset.podB64)), e);
         });
       });
     }
@@ -2173,6 +2194,11 @@ function attachListeners() {
       e.stopPropagation();
       if (el.dataset.podB64) {
         openDetail(JSON.parse(atob(el.dataset.podB64)));
+      }
+    });
+    el.addEventListener('contextmenu', (e) => {
+      if (el.dataset.podB64) {
+        showPodContextMenu(JSON.parse(atob(el.dataset.podB64)), e);
       }
     });
   });

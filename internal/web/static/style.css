@@ -956,8 +956,16 @@ main {
   border-left: 1px solid #30363d;
 }
 
+.group-children {
+  overflow: hidden;
+  transition: max-height 0.25s ease-out, opacity 0.25s ease-out;
+  max-height: 50000px;
+  opacity: 1;
+}
+
 .group-children.collapsed {
-  display: none;
+  max-height: 0;
+  opacity: 0;
 }
 
 .node-toggle {
@@ -1865,8 +1873,16 @@ main {
   margin-top: 10px;
 }
 
+.topo-pool-content {
+  overflow: hidden;
+  transition: max-height 0.25s ease-out, opacity 0.25s ease-out;
+  max-height: 5000px;
+  opacity: 1;
+}
+
 .pool-collapsed {
-  display: none !important;
+  max-height: 0 !important;
+  opacity: 0;
 }
 
 .topo-machine.rolling-out {
@@ -2000,6 +2016,13 @@ main {
   height: 10px;
   border-radius: 2px;
   cursor: pointer;
+}
+
+.topo-dot-selected {
+  outline: 1.5px solid rgba(230, 237, 243, 0.7);
+  outline-offset: 1px;
+  z-index: 1;
+  position: relative;
 }
 
 .topo-dot-running { background: #3fb950; }
