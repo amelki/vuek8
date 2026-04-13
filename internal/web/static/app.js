@@ -3014,6 +3014,163 @@ document.getElementById('sidebar-options-btn').addEventListener('click', (e) => 
 });
 
 // Update check
+// --- Changelog ---
+
+const changelog = [
+  { version: '0.5.0', items: [
+    'Deep links: share pod URLs with colleagues (via vuek8.app/open)',
+    'Auto-switch to the right cluster when opening a shared link',
+    'Right-click context menu on pod dots',
+    'ANSI color codes rendered in log viewer',
+    'Custom URL scheme (vuek8://) for desktop app deep linking',
+  ]},
+  { version: '0.4.7', items: [
+    'Real-time updates via Kubernetes Watch API (replaces polling)',
+    'Resizable detail panel',
+    'Live cluster discovery (new kubeconfig files appear without restart)',
+    'Smarter loading: spinner instead of progress bar when cached',
+    'Skeleton cards on both Nodes and Workloads tabs',
+    'CronJob pods show "Succeeded" in green',
+    'Active cluster styling improved',
+  ]},
+  { version: '0.4.5', items: [
+    'Namespace-aware workload grouping (same-name workloads separated)',
+    'Namespace label shown when names collide across namespaces',
+    'Tooltip on truncated node/workload names',
+    'StatefulSet rollout detection fix',
+    'Cross-check pod readiness vs Deployment status',
+    'Clickable node and workload links in pod details',
+  ]},
+  { version: '0.4.2', items: [
+    'Distinguish degraded from progressing workloads',
+    'Not-ready pods shown as yellow dots',
+    'Tooltip flips when near viewport edge',
+  ]},
+  { version: '0.4.0', items: [
+    'Rollout status detection with live progress bars',
+    'Workload indicators (progressing, degraded, stable)',
+    'Collapsible workload categories',
+  ]},
+  { version: '0.4.1', items: [
+    'Pod and workload actions (delete, restart, scale)',
+    'Safety toggle for destructive actions',
+  ]},
+  { version: '0.3.0', items: [
+    'Sortable pod columns',
+    'Improved age format',
+  ]},
+  { version: '0.2.0', items: [
+    '3-tab layout: Nodes, Workloads, Pods',
+    'Cluster icons with custom upload and color tints',
+    'Workload topology view',
+  ]},
+  { version: '0.2.2', items: [
+    'In-app auto-update with restart button',
+  ]},
+  { version: '0.1.0', items: [
+    'Initial release',
+    'Topology view with node pools and pod dots',
+    'Multi-cluster auto-discovery',
+    'Real-time pod status',
+    'Native macOS desktop app',
+  ]},
+];
+
+async function checkChangelog() {
+  try {
+    const info = await fetchJSON('/api/version');
+    const currentVersion = info.current;
+    if (!currentVersion || currentVersion === 'dev') return;
+
+    const lastSeen = localStorage.getItem('vuek8-last-seen-version');
+    if (lastSeen === currentVersion) return;
+
+    // Find what's new since last seen
+    const toast = document.getElementById('changelog-toast');
+    const title = document.getElementById('changelog-toast-title');
+    const body = document.getElementById('changelog-toast-body');
+    const showAllBtn = document.getElementById('changelog-show-all');
+
+    // Find entries newer than lastSeen
+    const lastSeenIdx = lastSeen ? changelog.findIndex(c => lastSeen.startsWith(c.version)) : -1;
+    // Entries to highlight: everything newer than lastSeen (or all if first run)
+    const newEntries = lastSeenIdx === -1 ? [changelog[0]] : changelog.slice(0, lastSeenIdx);
+    if (newEntries.length === 0) {
+      localStorage.setItem('vuek8-last-seen-version', currentVersion);
+      return;
+    }
+
+    title.textContent = "What's new in v" + newEntries[0].version;
+
+    let html = '';
+    for (const entry of newEntries) {
+      if (newEntries.length > 1) html += `<div class="changelog-version">v${esc(entry.version)}</div>`;
+      html += '<ul>';
+      for (const item of entry.items) html += `<li>${esc(item)}</li>`;
+      html += '</ul>';
+    }
+    body.innerHTML = html;
+
+    // Show all button
+    let showingAll = false;
+    showAllBtn.addEventListener('click', () => {
+      if (showingAll) {
+        body.innerHTML = html;
+        showAllBtn.textContent = 'Show full changelog';
+        showingAll = false;
+        return;
+      }
+      let allHtml = '';
+      for (const entry of changelog) {
+        allHtml += `<div class="changelog-version">v${esc(entry.version)}</div>`;
+        allHtml += '<ul>';
+        for (const item of entry.items) allHtml += `<li>${esc(item)}</li>`;
+        allHtml += '</ul>';
+      }
+      body.innerHTML = allHtml;
+      showAllBtn.textContent = 'Show less';
+      showingAll = true;
+    });
+
+    toast.classList.remove('hidden');
+
+    document.getElementById('changelog-toast-close').addEventListener('click', () => {
+      toast.classList.add('hidden');
+      localStorage.setItem('vuek8-last-seen-version', currentVersion);
+    });
+
+    // Auto-dismiss after 30 seconds
+    setTimeout(() => {
+      if (!toast.classList.contains('hidden')) {
+        toast.classList.add('hidden');
+        localStorage.setItem('vuek8-last-seen-version', currentVersion);
+      }
+    }, 30000);
+  } catch (e) {
+    // silently ignore
+  }
+}
+
+function showChangelog() {
+  const toast = document.getElementById('changelog-toast');
+  const title = document.getElementById('changelog-toast-title');
+  const body = document.getElementById('changelog-toast-body');
+
+  title.textContent = "What's new in v" + changelog[0].version;
+
+  let html = '';
+  for (const entry of changelog) {
+    html += `<div class="changelog-version">v${esc(entry.version)}</div>`;
+    html += '<ul>';
+    for (const item of entry.items) html += `<li>${esc(item)}</li>`;
+    html += '</ul>';
+  }
+  body.innerHTML = html;
+  const showAllBtn = document.getElementById('changelog-show-all');
+  showAllBtn.style.display = 'none';
+  toast.classList.remove('hidden');
+}
+
 async function checkForUpdate() {
   try {
     const info = await fetchJSON('/api/version');
@@ -3087,6 +3244,7 @@ function showToast(msg) {
   applySidebarState();
   restoreSessionState();
   checkForUpdate();
+  checkChangelog();
   await loadClusters();
   await waitForCache();
   hideSyncing();
@@ -3108,10 +3266,13 @@ function showToast(msg) {
   handleDeepLink();
   window.addEventListener('hashchange', handleDeepLink);
 
-  // Listen for deep links from Wails (desktop app)
+  // Listen for events from Wails (desktop app)
   if (window.runtime && window.runtime.EventsOn) {
     window.runtime.EventsOn('deep-link', (path) => {
       window.location.hash = '#' + path;
+    });
+    window.runtime.EventsOn('show-changelog', () => {
+      showChangelog();
     });
   }
 })();

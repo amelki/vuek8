@@ -63,6 +63,11 @@ func runNativeWindow(srv *http.Server, apiURL string) {
 			})
 		}
 	})
+	kglanceMenu.AddText("What's New", nil, func(_ *menu.CallbackData) {
+		if appCtx != nil {
+			wailsruntime.EventsEmit(appCtx, "show-changelog")
+		}
+	})
 	kglanceMenu.AddSeparator()
 	kglanceMenu.AddText("Quit Vue.k8", keys.CmdOrCtrl("q"), func(_ *menu.CallbackData) {
 		wailsruntime.Quit(appCtx)
