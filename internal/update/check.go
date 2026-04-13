@@ -201,10 +201,8 @@ func HandleRestart(w http.ResponseWriter, r *http.Request) {
 	// Launch new app and quit current
 	go func() {
 		time.Sleep(500 * time.Millisecond)
-		// Use 'open' which returns after the app is launched
-		cmd := exec.Command("open", "-n", "-a", appPath)
-		cmd.Run() // wait for open to finish launching
-		time.Sleep(2 * time.Second)
 		os.Exit(0)
 	}()
+	// Schedule relaunch after quit using a background process
+	exec.Command("bash", "-c", fmt.Sprintf("sleep 1 && open -a %q", appPath)).Start()
 }
