@@ -10,10 +10,10 @@ vuek8 auto-discovers your kubeconfig files, connects to your clusters, and gives
 
 | Platform | Download |
 |----------|----------|
-| **macOS (Apple Silicon)** | [Vue.k8-0.4.7.dmg](https://github.com/amelki/vuek8/releases/latest/download/Vue.k8-0.4.7.dmg) |
-| **macOS (Intel)** | [vuek8-0.4.7-macos-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.7-macos-amd64) |
-| **Linux** | [vuek8-0.4.7-linux-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.7-linux-amd64) |
-| **Windows** | [vuek8-0.4.7-windows-amd64.exe](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.7-windows-amd64.exe) |
+| **macOS (Apple Silicon)** | [Vue.k8-0.4.8.dmg](https://github.com/amelki/vuek8/releases/latest/download/Vue.k8-0.4.8.dmg) |
+| **macOS (Intel)** | [vuek8-0.4.8-macos-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.8-macos-amd64) |
+| **Linux** | [vuek8-0.4.8-linux-amd64](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.8-linux-amd64) |
+| **Windows** | [vuek8-0.4.8-windows-amd64.exe](https://github.com/amelki/vuek8/releases/latest/download/vuek8-0.4.8-windows-amd64.exe) |
 
 > macOS Apple Silicon: mount the DMG, drag to Applications. All others: run with `--browser` flag.
 
