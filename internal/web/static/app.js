@@ -304,6 +304,7 @@ async function loadDataQuiet() {
   }
   populateWorkloads();
   render();
+  checkPendingDeepLink();
 }
 
 async function loadData() {
@@ -1117,7 +1118,9 @@ function closePodActionsMenu() {
 }
 
 function podLink(p) {
-  const path = 'pod/' + encodeURIComponent(p.namespace) + '/' + encodeURIComponent(p.name);
+  const active = clusters.find(c => c.active);
+  const server = active ? active.server : '';
+  const path = 'pod/' + encodeURIComponent(p.namespace) + '/' + encodeURIComponent(p.name) + '@' + encodeURIComponent(server);
   return 'https://vuek8.app/open#' + path;
 }
 
@@ -3113,17 +3116,74 @@ function showToast(msg) {
   }
 })();
 
+let pendingDeepLink = null;
+
 function handleDeepLink() {
   const hash = window.location.hash;
   if (!hash.startsWith('#pod/')) return;
-  const parts = hash.slice(5).split('/');
+  // Format: #pod/namespace/name or #pod/namespace/name@server
+  const raw = hash.slice(5);
+  const atIdx = raw.lastIndexOf('@');
+  let path, server;
+  if (atIdx !== -1) {
+    path = raw.slice(0, atIdx);
+    server = decodeURIComponent(raw.slice(atIdx + 1));
+  } else {
+    path = raw;
+    server = '';
+  }
+  const parts = path.split('/');
   if (parts.length < 2) return;
   const ns = decodeURIComponent(parts[0]);
   const name = decodeURIComponent(parts[1]);
+  // Clear hash immediately so it doesn't re-trigger
+  history.replaceState(null, '', window.location.pathname + window.location.search);
+  resolveDeepLink(ns, name, server);
+}
+
+async function resolveDeepLink(ns, name, server) {
+  // If server is specified and we're on the wrong cluster, switch first
+  if (server) {
+    const active = clusters.find(c => c.active);
+    if (!active || active.server !== server) {
+      const target = clusters.find(c => c.server === server && !c.hidden);
+      if (target) {
+        pendingDeepLink = { ns, name, server };
+        await switchCluster(target.id);
+        return; // switchCluster will refresh data, checkPendingDeepLink will fire
+      }
+    }
+  }
+
   const pod = allPods.find(p => p.namespace === ns && p.name === name);
   if (pod) {
     openDetail(pod);
-    // Clear hash so it doesn't re-trigger
-    history.replaceState(null, '', window.location.pathname + window.location.search);
+    pendingDeepLink = null;
+  } else if (allPods.length === 0) {
+    // Data not loaded yet — retry after next refresh
+    pendingDeepLink = { ns, name, server };
+  } else {
+    // Pod not found in current data — open with minimal info
+    openDetail({
+      name: name,
+      namespace: ns,
+      status: 'Unknown',
+      ready: '-',
+      restarts: 0,
+      age: '-',
+      node: '-',
+      containers: [],
+      workloadName: '',
+      workloadKind: '',
+      cpuRequestMilli: 0, cpuLimitMilli: 0,
+      memRequestBytes: 0, memLimitBytes: 0,
+    });
+    pendingDeepLink = null;
   }
+}
+
+// Called after each data refresh to resolve pending deep links
+function checkPendingDeepLink() {
+  if (!pendingDeepLink) return;
+  resolveDeepLink(pendingDeepLink.ns, pendingDeepLink.name, pendingDeepLink.server);
 }

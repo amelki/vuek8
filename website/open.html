@@ -105,14 +105,24 @@
             }
 
             // Try to open the app
+            let appOpened = false;
+            window.addEventListener('blur', () => { appOpened = true; });
+            document.addEventListener('visibilitychange', () => {
+                if (document.hidden) appOpened = true;
+            });
+
             window.location.href = deepLink;
 
-            // After a delay, show fallback if the page is still visible
+            // After a delay, show fallback only if the app didn't take focus
             setTimeout(() => {
-                document.getElementById('status').textContent = "Couldn't detect Vue.k8. Click below to try again or download it.";
-                document.getElementById('status').className = 'status error';
-                document.getElementById('fallback').style.display = '';
-                document.getElementById('open-btn').href = deepLink;
+                if (appOpened) {
+                    document.getElementById('status').textContent = 'Vue.k8 opened. You can close this tab.';
+                } else {
+                    document.getElementById('status').textContent = "Vue.k8 doesn't seem to be installed.";
+                    document.getElementById('status').className = 'status error';
+                    document.getElementById('fallback').style.display = '';
+                    document.getElementById('open-btn').href = deepLink;
+                }
             }, 2000);
         }
     </script>
