@@ -3134,22 +3134,30 @@ async function checkChangelog() {
 
     toast.classList.remove('hidden');
 
-    document.getElementById('changelog-toast-close').addEventListener('click', () => {
-      toast.classList.add('hidden');
-      localStorage.setItem('vuek8-last-seen-version', currentVersion);
-    });
-
     // Auto-dismiss after 30 seconds
     setTimeout(() => {
       if (!toast.classList.contains('hidden')) {
-        toast.classList.add('hidden');
-        localStorage.setItem('vuek8-last-seen-version', currentVersion);
+        dismissChangelog();
       }
     }, 30000);
   } catch (e) {
     // silently ignore
   }
 }
+
+function dismissChangelog() {
+  const toast = document.getElementById('changelog-toast');
+  toast.classList.add('hidden');
+  try {
+    const info = fetchJSON('/api/version');
+  } catch(e) {}
+  // Best-effort save last seen version
+  if (changelog.length > 0) {
+    localStorage.setItem('vuek8-last-seen-version', changelog[0].version);
+  }
+}
+
+document.getElementById('changelog-toast-close').addEventListener('click', dismissChangelog);
 
 function showChangelog() {
   const toast = document.getElementById('changelog-toast');
