@@ -1442,6 +1442,62 @@ function getColorMode() {
   return document.getElementById('color-mode').value;
 }
 
+function getSortMode() {
+  const el = document.getElementById('sort-mode');
+  return el ? el.value : 'age';
+}
+
+// Returns a comparator function for pods based on current sort mode.
+// Severity mode uses the active color mode to determine "worse first":
+//   - pod-status: Red > Yellow > Green
+//   - pod-cpu / pod-mem: highest usage first
+function getPodComparator() {
+  const mode = getSortMode();
+  if (mode === 'name') {
+    return (a, b) => (a.name || '').localeCompare(b.name || '');
+  }
+  if (mode === 'severity') {
+    const colorMode = getColorMode();
+    if (colorMode === 'pod-cpu') {
+      return (a, b) => {
+        const ma = allMetrics[a.namespace + '/' + a.name] || {};
+        const mb = allMetrics[b.namespace + '/' + b.name] || {};
+        const aLim = a.cpuLimitMilli || 0;
+        const bLim = b.cpuLimitMilli || 0;
+        const aPct = aLim > 0 ? (ma.cpuMilli || 0) / aLim : 0;
+        const bPct = bLim > 0 ? (mb.cpuMilli || 0) / bLim : 0;
+        return bPct - aPct;
+      };
+    }
+    if (colorMode === 'pod-mem') {
+      return (a, b) => {
+        const ma = allMetrics[a.namespace + '/' + a.name] || {};
+        const mb = allMetrics[b.namespace + '/' + b.name] || {};
+        const aLim = a.memLimitBytes || 0;
+        const bLim = b.memLimitBytes || 0;
+        const aPct = aLim > 0 ? (ma.memBytes || 0) / aLim : 0;
+        const bPct = bLim > 0 ? (mb.memBytes || 0) / bLim : 0;
+        return bPct - aPct;
+      };
+    }
+    // pod-status: red > yellow > green
+    const rank = (p) => {
+      const s = (p.status || '').toLowerCase().replace(/[^a-z]/g, '');
+      if (['failed','error','crashloopbackoff','imagepullbackoff','errimagepull'].includes(s)) return 0;
+      if (['pending','containercreating','terminating'].includes(s)) return 1;
+      // Running but not ready = yellow
+      if (s === 'running' && p.ready) {
+        const parts = p.ready.split('/');
+        if (parts.length === 2 && parts[0] !== parts[1]) return 1;
+      }
+      return 2;
+    };
+    return (a, b) => rank(a) - rank(b) || (a.name || '').localeCompare(b.name || '');
+  }
+  // Default: age (oldest first)
+  return byCreatedAt;
+}
+
 // Compute aggregated node utilization from pod metrics
 function getNodeUtilization(nodeName) {
   let cpuMilli = 0, memBytes = 0;
@@ -1578,7 +1634,7 @@ function renderTopologyByNodes(filtered, filter) {
     podsByNode.get(p.node).push(p);
   }
   // Sort pods within each node: oldest first
-  for (const arr of podsByNode.values()) arr.sort(byCreatedAt);
+  for (const arr of podsByNode.values()) arr.sort(getPodComparator());
 
   // Group nodes by pool
   const pools = new Map();
@@ -1638,7 +1694,7 @@ function renderTopologyByPods(filtered, filter, mode) {
     cards.get(key).push(p);
   }
   // Sort pods within each card: oldest first
-  for (const arr of cards.values()) arr.sort(byCreatedAt);
+  for (const arr of cards.values()) arr.sort(getPodComparator());
 
   // Sort by pod count descending
   const sorted = [...cards.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -1852,7 +1908,7 @@ function updateWorkloadCardsInPlace(filtered, mode) {
     cards.get(key).push(p);
   }
   // Sort pods within each card: oldest first
-  for (const arr of cards.values()) arr.sort(byCreatedAt);
+  for (const arr of cards.values()) arr.sort(getPodComparator());
 
   // Find all card elements and update their contents
   workloadsEl.querySelectorAll('.topo-machine').forEach(cardEl => {
@@ -2413,7 +2469,8 @@ function syncPickerText(selectId, pickerId) {
 nsSelect.addEventListener('change', () => { workloadsNeedFullLayout = true; populateWorkloads(); render(); saveSessionState(); });
 wlSelect.addEventListener('change', () => { workloadsNeedFullLayout = true; render(); saveSessionState(); });
 groupSelect.addEventListener('change', () => { updateExpandToggle(); render(); saveSessionState(); });
-document.getElementById('color-mode').addEventListener('change', () => { render(); saveSessionState(); });
+document.getElementById('color-mode').addEventListener('change', () => { workloadsNeedFullLayout = true; render(); saveSessionState(); });
+document.getElementById('sort-mode').addEventListener('change', () => { workloadsNeedFullLayout = true; render(); saveSessionState(); });
 document.getElementById('topo-group').addEventListener('change', () => {
   render();
   saveSessionState();
@@ -2954,12 +3011,14 @@ function restoreSessionState() {
   if (appSettings.workload) wlSelect.value = appSettings.workload;
   if (appSettings.podSearch) podSearch.value = appSettings.podSearch;
   if (appSettings.colorMode) document.getElementById('color-mode').value = appSettings.colorMode;
+  if (appSettings.sortMode) document.getElementById('sort-mode').value = appSettings.sortMode;
   if (appSettings.topoGroup) document.getElementById('topo-group').value = appSettings.topoGroup;
   if (appSettings.listGroup) document.getElementById('group-select').value = appSettings.listGroup;
   // Sync all picker texts
   syncPickerText('topo-group', 'topo-group-picker');
   syncPickerText('workload-group', 'workload-group-picker');
   syncPickerText('color-mode', 'color-mode-picker');
+  syncPickerText('sort-mode', 'sort-mode-picker');
   syncPickerText('group-select', 'group-select-picker');
   // If grouped by label, show "Label: xxx" in the picker
   if (document.getElementById('topo-group').value === 'label') {
@@ -2976,6 +3035,7 @@ function saveSessionState() {
   appSettings.workload = wlSelect.value;
   appSettings.podSearch = podSearch.value;
   appSettings.colorMode = document.getElementById('color-mode').value;
+  appSettings.sortMode = document.getElementById('sort-mode').value;
   appSettings.topoGroup = document.getElementById('topo-group').value;
   appSettings.topoLabel = document.getElementById('topo-label-select').value;
   appSettings.listGroup = document.getElementById('group-select').value;
@@ -3062,6 +3122,11 @@ document.getElementById('sidebar-options-btn').addEventListener('click', (e) => 
 // --- Changelog ---
 
 const changelog = [
+  { version: '0.5.5', items: [
+    'New Sort picker: sort pods within cards by Age, Name or Severity',
+    'Severity sort adapts to active Color mode — hottest pods or most broken first',
+    'More realistic demo mode with production-shaped workload distribution',
+  ]},
   { version: '0.5.4', items: [
     'Pods sorted by age within cards (oldest first) — see new pods appear during rollouts',
     'Right-click menu on pods now includes shell, logs and restart actions on every view',
@@ -3277,7 +3342,6 @@ document.getElementById('update-dismiss').addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (e.key === 'r' && !e.ctrlKey && !e.metaKey && !e.altKey && document.activeElement.tagName !== 'INPUT') {
     fetch(apiURL('/api/demo/rollout/toggle'), { method: 'POST' }).catch(() => {});
-    showToast('Press R to start/stop rollout');
   }
 });
 
@@ -3314,14 +3378,6 @@ function showToast(msg) {
   setInterval(refresh, 3000);
   setInterval(loadNamespaces, 15000);
   setInterval(loadClusters, 5000);
-
-  // Show demo hint after a short delay (GET to check, won't trigger rollout)
-  try {
-    const demoCheck = await fetch(apiURL('/api/demo/rollout/toggle'));
-    if (demoCheck.ok) {
-      setTimeout(() => showToast('Press R to start/stop a rollout demo'), 2000);
-    }
-  } catch(e) {}
 
   // Deep link: #pod/<namespace>/<name> or vuek8://pod/<namespace>/<name>
   handleDeepLink();

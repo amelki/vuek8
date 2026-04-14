@@ -236,78 +236,73 @@ type workload struct {
 	image     string
 	tag       string
 	kind      string // Deployment or StatefulSet
+	replicas  int    // explicit replica count (0 = auto-distribute)
 	cpuReq    int64
 	cpuLim    int64
 	memReqMi  int64
 	memLimMi  int64
 }
 
-// Broker workloads (6 pods per broker node).
+// Production-shaped workloads: a few huge, a few medium, many small.
+// Total pods: ~1300 across all workloads.
+var allWorkloads = []workload{
+	// === Huge workloads (the visual centerpieces) ===
+	{"task-runner", "arctis/task-runner", "4.2.1", "Deployment", 480, 200, 500, 256, 512},
+	{"shard-group", "arctis/shard-group", "2.7.3", "StatefulSet", 240, 300, 800, 512, 1024},
+	{"event-processor", "arctis/event-processor", "3.1.0", "Deployment", 180, 200, 500, 256, 512},
+
+	// === Large workloads ===
+	{"caller-pool-a", "arctis/caller", "1.9.2", "StatefulSet", 100, 200, 500, 384, 768},
+	{"caller-pool-b", "arctis/caller", "1.9.2", "StatefulSet", 100, 200, 500, 384, 768},
+	{"custom-runtime", "arctis/custom-runtime", "5.0.4", "StatefulSet", 70, 300, 800, 512, 1024},
+
+	// === Medium workloads ===
+	{"cache", "bitnami/redis", "7.4.1", "StatefulSet", 24, 200, 500, 512, 2048},
+	{"api", "arctis/api", "12.4.0", "Deployment", 24, 250, 600, 384, 768},
+	{"scheduler", "arctis/scheduler", "3.5.0", "StatefulSet", 20, 200, 500, 256, 512},
+	{"gateway", "arctis/gateway", "2.14.0", "Deployment", 18, 200, 500, 256, 512},
+	{"browser-rendering", "arctis/browser-rendering", "1.3.0", "Deployment", 10, 500, 1500, 1024, 2048},
+
+	// === Small-medium workloads ===
+	{"discovery", "arctis/discovery", "1.0.5", "StatefulSet", 8, 100, 300, 128, 256},
+	{"ingress-public", "ingress-nginx/controller", "1.11.2", "Deployment", 6, 200, 500, 256, 512},
+	{"ingress-internal", "ingress-nginx/controller", "1.11.2", "Deployment", 6, 200, 500, 256, 512},
+	{"analytics-worker", "arctis/analytics-worker", "1.5.0", "Deployment", 5, 200, 500, 256, 512},
+	{"shard-broker", "arctis/shard-broker", "1.0.3", "StatefulSet", 4, 150, 400, 192, 384},
+	{"rss", "arctis/rss-fetcher", "1.4.0", "StatefulSet", 4, 100, 300, 128, 256},
+	{"avatars-website", "arctis/avatars-website", "2.0.0", "Deployment", 4, 100, 250, 128, 256},
+
+	// === Small workloads ===
+	{"internal-api", "arctis/internal-api", "2.1.0", "Deployment", 3, 100, 300, 128, 256},
+	{"poster-service", "arctis/poster-service", "1.3.0", "Deployment", 3, 100, 300, 128, 256},
+	{"url-shortener", "arctis/url-shortener", "1.2.0", "Deployment", 2, 50, 150, 64, 128},
+	{"webhook-dispatcher", "arctis/webhook-dispatcher", "1.4.1", "Deployment", 2, 150, 400, 192, 384},
+	{"mcp-server", "arctis/mcp-server", "0.8.0", "Deployment", 2, 100, 300, 128, 256},
+
+	// === Singleton workloads ===
+	{"tiktok-fetcher", "arctis/tiktok-fetcher", "1.0.2", "StatefulSet", 1, 100, 300, 128, 256},
+	{"audio-worker", "arctis/audio-worker", "2.0.1", "StatefulSet", 1, 500, 1500, 1024, 2048},
+	{"redis-primary-0", "bitnami/redis", "7.4.1", "StatefulSet", 1, 200, 500, 512, 2048},
+	{"redis-primary-1", "bitnami/redis", "7.4.1", "StatefulSet", 1, 200, 500, 512, 2048},
+	{"redis-primary-2", "bitnami/redis", "7.4.1", "StatefulSet", 1, 200, 500, 512, 2048},
+	{"transcript-worker", "arctis/transcript-worker", "1.2.0", "Deployment", 1, 200, 500, 256, 512},
+	{"shell-data", "arctis/shell-data", "1.0.0", "Deployment", 1, 50, 150, 64, 128},
+	{"shell", "arctis/shell", "1.0.0", "Deployment", 1, 50, 150, 64, 128},
+	{"feature-flags", "arctis/feature-flags", "1.0.4", "Deployment", 1, 100, 200, 128, 256},
+	{"audit-logger", "arctis/audit-logger", "1.3.5", "Deployment", 1, 100, 300, 128, 256},
+	{"config-service", "arctis/config-service", "1.0.1", "Deployment", 1, 50, 150, 64, 128},
+	{"geo-service", "arctis/geo-service", "1.5.0", "Deployment", 1, 100, 300, 128, 256},
+	{"translation-api", "arctis/translation-api", "2.0.0", "Deployment", 1, 200, 500, 256, 512},
+}
+
+// Stateful brokers running on dedicated broker nodes.
 var brokerWorkloads = []workload{
-	{"nats-streaming", "nats-streaming", "0.25.6", "StatefulSet", 500, 2000, 1024, 4096},
-	{"kafka", "bitnami/kafka", "3.8.0", "StatefulSet", 1000, 3000, 2048, 8192},
-	{"zookeeper", "bitnami/zookeeper", "3.9.2", "StatefulSet", 200, 500, 512, 1024},
-	{"rabbitmq", "bitnami/rabbitmq", "3.13.7", "StatefulSet", 500, 1500, 1024, 4096},
-	{"event-router", "arctis/event-router", "2.4.1", "Deployment", 200, 500, 256, 512},
-	{"schema-registry", "confluentinc/schema-registry", "7.7.1", "Deployment", 300, 800, 512, 1024},
-}
-
-// General-pool service names (for generating varied workloads).
-var generalServices = []workload{
-	{"api-gateway", "arctis/api-gateway", "2.14.0", "Deployment", 200, 500, 256, 512},
-	{"auth-service", "arctis/auth-service", "1.8.3", "Deployment", 150, 400, 192, 384},
-	{"user-service", "arctis/user-service", "3.1.0", "Deployment", 150, 400, 192, 384},
-	{"session-manager", "arctis/session-manager", "1.2.1", "Deployment", 100, 300, 128, 256},
-	{"notification-worker", "arctis/notification-worker", "1.5.0", "Deployment", 200, 500, 256, 512},
-	{"payment-processor", "arctis/payment-processor", "3.0.4", "Deployment", 200, 500, 256, 512},
-	{"catalog-api", "arctis/catalog-api", "4.7.2", "Deployment", 250, 600, 384, 768},
-	{"search-indexer", "arctis/search-indexer", "2.3.1", "Deployment", 400, 1000, 512, 1024},
-	{"recommendation-engine", "arctis/recommendation-engine", "1.9.7", "Deployment", 500, 1500, 1024, 2048},
-	{"event-bus", "arctis/event-bus", "1.3.2", "Deployment", 150, 400, 192, 384},
-	{"order-service", "arctis/order-service", "5.2.1", "Deployment", 200, 500, 256, 512},
-	{"inventory-sync", "arctis/inventory-sync", "1.6.0", "Deployment", 300, 700, 384, 768},
-	{"email-sender", "arctis/email-sender", "2.0.3", "Deployment", 100, 250, 128, 256},
-	{"webhook-dispatcher", "arctis/webhook-dispatcher", "1.4.1", "Deployment", 150, 400, 192, 384},
-	{"media-processor", "arctis/media-processor", "3.2.0", "Deployment", 500, 1500, 512, 2048},
-	{"pdf-generator", "arctis/pdf-generator", "1.1.0", "Deployment", 200, 500, 256, 512},
-	{"analytics-pipeline", "arctis/analytics-pipeline", "2.1.0", "Deployment", 400, 800, 512, 1024},
-	{"feature-flags", "arctis/feature-flags", "1.0.4", "Deployment", 100, 200, 128, 256},
-	{"rate-limiter", "arctis/rate-limiter", "1.1.2", "Deployment", 100, 250, 128, 256},
-	{"cdn-origin", "arctis/cdn-origin", "2.7.0", "Deployment", 200, 500, 256, 512},
-	{"image-resizer", "arctis/image-resizer", "1.3.0", "Deployment", 300, 800, 256, 1024},
-	{"audit-logger", "arctis/audit-logger", "1.3.5", "Deployment", 100, 300, 128, 256},
-	{"billing-service", "arctis/billing-service", "4.0.2", "Deployment", 200, 500, 256, 512},
-	{"subscription-manager", "arctis/subscription-manager", "2.2.0", "Deployment", 150, 400, 192, 384},
-	{"permission-service", "arctis/permission-service", "2.4.0", "Deployment", 100, 300, 128, 256},
-	{"config-service", "arctis/config-service", "1.0.1", "Deployment", 50, 150, 64, 128},
-	{"healthcheck-worker", "arctis/healthcheck-worker", "1.2.0", "Deployment", 50, 150, 64, 128},
-	{"scheduler", "arctis/scheduler", "3.5.0", "Deployment", 200, 500, 256, 512},
-	{"stream-processor", "arctis/stream-processor", "2.8.0", "Deployment", 400, 1000, 512, 1024},
-	{"cache-warmer", "arctis/cache-warmer", "1.0.0", "Deployment", 100, 300, 128, 256},
-	{"graphql-gateway", "arctis/graphql-gateway", "2.1.0", "Deployment", 300, 800, 384, 768},
-	{"websocket-hub", "arctis/websocket-hub", "1.4.0", "Deployment", 200, 500, 256, 512},
-	{"file-storage", "arctis/file-storage", "2.0.1", "Deployment", 150, 400, 192, 512},
-	{"export-worker", "arctis/export-worker", "1.1.3", "Deployment", 200, 500, 256, 512},
-	{"import-worker", "arctis/import-worker", "1.2.0", "Deployment", 200, 500, 256, 512},
-	{"cron-dispatcher", "arctis/cron-dispatcher", "1.0.5", "Deployment", 100, 250, 128, 256},
-	{"geo-service", "arctis/geo-service", "1.5.0", "Deployment", 100, 300, 128, 256},
-	{"translation-api", "arctis/translation-api", "2.0.0", "Deployment", 200, 500, 256, 512},
-	{"ab-testing", "arctis/ab-testing", "1.0.2", "Deployment", 50, 150, 64, 128},
-	{"push-notifier", "arctis/push-notifier", "1.3.1", "Deployment", 150, 400, 192, 384},
-}
-
-// Worker-pool workloads.
-var workerServices = []workload{
-	{"postgres", "bitnami/postgresql", "16.2.0", "StatefulSet", 500, 2000, 1024, 4096},
-	{"redis-cluster", "bitnami/redis", "7.4.1", "StatefulSet", 200, 500, 512, 2048},
-	{"elasticsearch", "bitnami/elasticsearch", "8.16.0", "StatefulSet", 500, 2000, 2048, 4096},
-	{"clickhouse", "clickhouse/clickhouse-server", "24.8", "StatefulSet", 500, 2000, 1024, 4096},
-	{"mongo", "bitnami/mongodb", "7.0.14", "StatefulSet", 500, 2000, 1024, 4096},
-	{"minio", "minio/minio", "2024.10", "StatefulSet", 200, 500, 512, 2048},
-	{"pgbouncer", "bitnami/pgbouncer", "1.23.0", "Deployment", 100, 300, 64, 128},
-	{"redis-exporter", "oliver006/redis-exporter", "1.63.0", "Deployment", 50, 100, 32, 64},
-	{"backup-agent", "arctis/backup-agent", "1.2.0", "Deployment", 100, 300, 128, 256},
-	{"replication-manager", "arctis/replication-manager", "1.0.3", "Deployment", 100, 300, 128, 256},
+	{"nats-streaming", "nats-streaming", "0.25.6", "StatefulSet", 4, 500, 2000, 1024, 4096},
+	{"kafka", "bitnami/kafka", "3.8.0", "StatefulSet", 4, 1000, 3000, 2048, 8192},
+	{"zookeeper", "bitnami/zookeeper", "3.9.2", "StatefulSet", 4, 200, 500, 512, 1024},
+	{"rabbitmq", "bitnami/rabbitmq", "3.13.7", "StatefulSet", 4, 500, 1500, 1024, 4096},
+	{"event-router", "arctis/event-router", "2.4.1", "Deployment", 4, 200, 500, 256, 512},
+	{"schema-registry", "confluentinc/schema-registry", "7.7.1", "Deployment", 4, 300, 800, 512, 1024},
 }
 
 var ages = []string{"1d", "2d", "3d", "5d", "7d", "8d", "10d", "12d", "14d", "18d", "21d", "28d", "30d"}
@@ -344,67 +339,56 @@ func buildPods() []kube.PodInfo {
 		}
 	}
 
-	// === Brokers: 4 nodes × 6 pods each = 24 pods ===
-	for i := 1; i <= 4; i++ {
-		node := fmt.Sprintf("brokers-%d", i)
-		for j, w := range brokerWorkloads {
-			pods = append(pods, makePod(w, node, i-1+j))
+	// === Broker nodes: 4 nodes, brokerWorkloads spread across them ===
+	brokerNodes := []string{"brokers-1", "brokers-2", "brokers-3", "brokers-4"}
+	for _, w := range brokerWorkloads {
+		for i := 0; i < w.replicas; i++ {
+			node := brokerNodes[i%len(brokerNodes)]
+			pods = append(pods, makePod(w, node, i))
 		}
 	}
 
-	// === General: 13 nodes, 50–100 pods each ===
-	generalNodeNames := make([]string, 13)
+	// === General nodes (13) + worker nodes (15): spread allWorkloads pods ===
+	var generalNodes []string
 	for i := 0; i < 13; i++ {
-		generalNodeNames[i] = fmt.Sprintf("general-%d", i+1)
+		generalNodes = append(generalNodes, fmt.Sprintf("general-%d", i+1))
 	}
-	svcIdx := 0
-	for i := 0; i < 13; i++ {
-		node := generalNodeNames[i]
-		podCount := r.between(50, 100)
-		for j := 0; j < podCount; j++ {
-			w := generalServices[svcIdx%len(generalServices)]
-			svcIdx++
-			pods = append(pods, makePod(w, node, j))
+	var workerNodes []string
+	for i := 0; i < 15; i++ {
+		workerNodes = append(workerNodes, fmt.Sprintf("workers-%d", i+1))
+	}
+	allNodesList := append([]string{}, generalNodes...)
+	allNodesList = append(allNodesList, workerNodes...)
+
+	// Distribute each workload's pods across nodes (round-robin per workload,
+	// starting at a different offset per workload to spread load evenly)
+	for wIdx, w := range allWorkloads {
+		startOffset := wIdx % len(allNodesList)
+		for i := 0; i < w.replicas; i++ {
+			node := allNodesList[(startOffset+i)%len(allNodesList)]
+			pods = append(pods, makePod(w, node, i))
 		}
 	}
 
-	// === Workers: 15 nodes, 12–15 pods each ===
-	workerNodeNames := make([]string, 15)
-	for i := 0; i < 15; i++ {
-		workerNodeNames[i] = fmt.Sprintf("workers-%d", i+1)
-	}
-	wsvcIdx := 0
-	for i := 0; i < 15; i++ {
-		node := workerNodeNames[i]
-		podCount := r.between(12, 15)
-		for j := 0; j < podCount; j++ {
-			w := workerServices[wsvcIdx%len(workerServices)]
-			wsvcIdx++
-			pods = append(pods, makePod(w, node, j))
-		}
-	}
-
-	// === Apply ~10% red status with clustering ===
-	// Mark some pods as unhealthy in grapes (groups of 1, 3, 4, or 4–8).
+	// === Apply ~2% red status with clustering ===
+	// Mark some pods as unhealthy in small grapes.
 	totalPods := len(pods)
-	targetRed := totalPods / 10 // ~10%
+	targetRed := totalPods / 50 // ~2%
 	redCount := 0
 	redStatuses := []string{"CrashLoopBackOff", "Error", "ImagePullBackOff"}
 
 	i := 0
 	for i < totalPods && redCount < targetRed {
-		// Decide next grape size
+		// Decide next grape size — mostly singles with rare pairs
 		roll := r.intn(10)
 		var grapeSize int
 		switch {
-		case roll < 3: // 30% chance: single pod
+		case roll < 7: // 70% chance: single pod
 			grapeSize = 1
-		case roll < 5: // 20% chance: grape of 3
+		case roll < 9: // 20% chance: pair
+			grapeSize = 2
+		default: // 10% chance: grape of 3
 			grapeSize = 3
-		case roll < 7: // 20% chance: grape of 4
-			grapeSize = 4
-		default: // 30% chance: grape of 4–8
-			grapeSize = r.between(4, 8)
 		}
 		if redCount+grapeSize > targetRed {
 			grapeSize = targetRed - redCount
@@ -446,6 +430,20 @@ func podNameHash(name string) uint64 {
 	return h
 }
 
+// skewedPct returns a percentage (1..90) skewed toward low values.
+// Roughly: 70% chance [5..25], 20% chance [25..55], 10% chance [55..90].
+func skewedPct(r *rng) int {
+	roll := r.intn(10)
+	switch {
+	case roll < 7:
+		return r.between(5, 25)
+	case roll < 9:
+		return r.between(25, 55)
+	default:
+		return r.between(55, 90)
+	}
+}
+
 func buildMetrics(pods []kube.PodInfo) []kube.PodMetrics {
 	var metrics []kube.PodMetrics
 	hotUsed := 0
@@ -455,8 +453,9 @@ func buildMetrics(pods []kube.PodInfo) []kube.PodMetrics {
 		}
 		// Per-pod deterministic RNG based on pod name — stable across rebuilds
 		r := newRng(podNameHash(p.Name))
-		cpuPct := r.between(5, 95)
-		memPct := r.between(10, 90)
+		// Skewed distribution: most pods are idle/low-usage, few are warm, rare are hot
+		cpuPct := skewedPct(r)
+		memPct := skewedPct(r)
 
 		cpuMilli := p.CPURequestMilli * int64(cpuPct) / 100
 
@@ -612,7 +611,7 @@ func (s *demoState) simulateRollout() {
 		}
 		s.mu.RUnlock()
 
-		wlName := "pdf-generator"
+		wlName := "api"
 		if counts[wlName] == 0 {
 			time.Sleep(5 * time.Second)
 			continue

@@ -87,6 +87,15 @@
           <option value="pod-cpu">CPU</option>
           <option value="pod-mem">Memory</option>
         </select>
+        <!-- Shared sort mode (nodes + workloads) -->
+        <span class="ctrl-sep topo-only">&middot;</span>
+        <span class="ctrl-label topo-only">Sort</span>
+        <span class="ctrl-picker topo-only" id="sort-mode-picker" data-target="sort-mode">Age</span>
+        <select id="sort-mode" class="ctrl-hidden-select">
+          <option value="age">Age</option>
+          <option value="name">Name</option>
+          <option value="severity">Severity</option>
+        </select>
         <!-- Pods tab controls -->
         <span class="ctrl-label pods-only hidden-ctrl">View</span>
         <span class="ctrl-picker pods-only hidden-ctrl" id="group-select-picker" data-target="group-select">All pods</span>
