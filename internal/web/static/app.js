@@ -327,6 +327,14 @@ function workloadKey(p) {
   return p.workloadKind + '/' + p.namespace + '/' + (p.workloadName || p.name);
 }
 
+// Sort pods by creation time (oldest first); fall back to name for stability
+function byCreatedAt(a, b) {
+  const aT = a.createdAt || 0;
+  const bT = b.createdAt || 0;
+  if (aT !== bT) return aT - bT;
+  return (a.name || '').localeCompare(b.name || '');
+}
+
 // --- Rendering ---
 
 function matchesSearch(name, filter) {
@@ -1155,12 +1163,17 @@ function showPodContextMenu(p, e) {
     { label: 'View details', action: () => openDetail(p) },
     { label: 'Copy pod link', action: () => copyPodLink(p) },
     { sep: true },
+    { label: 'Open shell in terminal', action: () => { currentDetailPod = p; openTerminalExec(); } },
     { label: 'Copy shell command', action: () => { currentDetailPod = p; copyTerminalCmd('exec'); } },
+    { sep: true },
+    { label: 'Tail logs in terminal', action: () => { currentDetailPod = p; openTerminalLogs(); } },
     { label: 'Copy tail command', action: () => { currentDetailPod = p; copyTerminalCmd('logs'); } },
   ];
   if (appSettings.allowActions) {
     items.push({ sep: true });
     items.push({ label: 'Delete pod', action: () => confirmDeletePod(p), danger: true });
+    items.push({ sep: true });
+    items.push({ label: 'Restart ' + (p.workloadKind || 'workload'), action: () => confirmRestartWorkload(p) });
   }
 
   for (const item of items) {
@@ -1564,6 +1577,8 @@ function renderTopologyByNodes(filtered, filter) {
     if (!podsByNode.has(p.node)) podsByNode.set(p.node, []);
     podsByNode.get(p.node).push(p);
   }
+  // Sort pods within each node: oldest first
+  for (const arr of podsByNode.values()) arr.sort(byCreatedAt);
 
   // Group nodes by pool
   const pools = new Map();
@@ -1622,6 +1637,8 @@ function renderTopologyByPods(filtered, filter, mode) {
     if (!cards.has(key)) cards.set(key, []);
     cards.get(key).push(p);
   }
+  // Sort pods within each card: oldest first
+  for (const arr of cards.values()) arr.sort(byCreatedAt);
 
   // Sort by pod count descending
   const sorted = [...cards.entries()].sort((a, b) => b[1].length - a[1].length);
@@ -1834,6 +1851,8 @@ function updateWorkloadCardsInPlace(filtered, mode) {
     if (!cards.has(key)) cards.set(key, []);
     cards.get(key).push(p);
   }
+  // Sort pods within each card: oldest first
+  for (const arr of cards.values()) arr.sort(byCreatedAt);
 
   // Find all card elements and update their contents
   workloadsEl.querySelectorAll('.topo-machine').forEach(cardEl => {
@@ -3043,6 +3062,14 @@ document.getElementById('sidebar-options-btn').addEventListener('click', (e) => 
 // --- Changelog ---
 
 const changelog = [
+  { version: '0.5.4', items: [
+    'Pods sorted by age within cards (oldest first) — see new pods appear during rollouts',
+    'Right-click menu on pods now includes shell, logs and restart actions on every view',
+    'Right-click context menu also available in the Pods list view',
+    'Selected pod gets a subtle outline indicator',
+    'Smooth animation when collapsing/expanding categories',
+    'Natural sort for nodes (node-2 before node-10)',
+  ]},
   { version: '0.5.0', items: [
     'Deep links: share pod URLs with colleagues (via vuek8.app/open)',
     'Auto-switch to the right cluster when opening a shared link',

@@ -41,6 +41,7 @@ type PodInfo struct {
 	MemRequestBytes int64           `json:"memRequestBytes"`
 	MemLimitBytes   int64           `json:"memLimitBytes"`
 	Age          string          `json:"age"`
+	CreatedAt    int64           `json:"createdAt"` // Unix seconds, for client-side sorting
 	Node         string          `json:"node"`
 	Containers   []ContainerInfo `json:"containers"`
 	WorkloadName string          `json:"workloadName"`
@@ -247,6 +248,7 @@ func (c *Client) convertPods(allPodItems []corev1.Pod) []PodInfo {
 			MemRequestBytes: memReq,
 			MemLimitBytes:   memLim,
 			Age:             formatAge(pod.CreationTimestamp.Time),
+			CreatedAt:       pod.CreationTimestamp.Unix(),
 			Node:            pod.Spec.NodeName,
 			Containers:      containers,
 			WorkloadName:    wName,
