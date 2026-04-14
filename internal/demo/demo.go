@@ -685,7 +685,7 @@ func (s *demoState) simulateRollout() {
 			s.metrics = buildMetrics(s.pods)
 			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
-			if sleepOrStop(4 * time.Second) { return }
+			if sleepOrStop(1500 * time.Millisecond) { return }
 
 			// Step 2: New pods → Running, old pods → Terminating
 			s.mu.Lock()
@@ -713,7 +713,7 @@ func (s *demoState) simulateRollout() {
 			s.metrics = buildMetrics(s.pods)
 			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
-			if sleepOrStop(4 * time.Second) { return }
+			if sleepOrStop(1500 * time.Millisecond) { return }
 
 			// Step 3: Remove old pods, advance progress
 			s.mu.Lock()
@@ -730,7 +730,7 @@ func (s *demoState) simulateRollout() {
 			s.workloads = s.buildWorkloadStatuses()
 			s.mu.Unlock()
 
-			if sleepOrStop(4 * time.Second) { return }
+			if sleepOrStop(1500 * time.Millisecond) { return }
 		}
 
 		// Mark rollout complete
