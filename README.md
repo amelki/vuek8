@@ -19,14 +19,16 @@ vuek8 auto-discovers your kubeconfig files, connects to your clusters, and gives
 
 ## Features
 
-- **Topology view** — Visual map of your cluster: nodes grouped by pool, pods as colored dots (green = running, red = error, yellow = pending). Hover for details, click to inspect.
-- **List view** — Pods in a sortable table with resizable columns. Group by node, workload, or both. Filter by namespace, workload, or text search.
-- **Multi-cluster** — Auto-discovers all kubeconfigs in `~/.kube/`. Switch clusters from the sidebar. Rename and hide clusters you don't need.
-- **Real-time** — Background cache refreshes every 3 seconds. Watch rollouts happen live.
-- **Container details** — See per-container status, image, and tag. Click any pod to open the detail panel.
-- **Native desktop app** — Runs as a macOS app (via Wails/WebKit). No Electron, no Chrome. 12MB DMG.
+- **Nodes view** — See pods per machine, grouped by pool/role/subnet/label. Each pod is a colored dot (green = running, yellow = pending, red = error). Spot issues instantly.
+- **Workloads view** — Same visual treatment, grouped by Deployment/StatefulSet. Live rollout progress bars, degraded detection, unavailable pod counts.
+- **Pods list** — Sortable, resizable columns. Group by node, workload, or both. Filter by namespace, workload, or text search.
+- **Real-time** — Uses the Kubernetes Watch API for instant updates. Rollouts animate as they happen.
+- **Deep links** — Share pod URLs with colleagues (`https://vuek8.app/open#pod/namespace/name`). Opens the app, switches to the right cluster, shows the pod.
+- **Live logs** — Stream logs with ANSI colors, tail in-app or pipe to your terminal. Search, filter, download.
+- **Multi-cluster** — Auto-discovers all kubeconfigs in `~/.kube/`. Switch clusters from the sidebar. Rename, hide, or set custom icons.
+- **Native desktop app** — macOS app via Wails/WebKit. No Electron, no Chrome. 12MB DMG.
 - **Browser mode** — Also works in any browser for development or headless environments.
-- **Fast** — API responses in ~13ms from server-side cache. No lag, no spinners.
+- **Fast** — Built in Go, single binary, vanilla JS frontend. No lag, no spinners.
 
 ## Quick Start
 
@@ -66,13 +68,17 @@ vuek8
 
 ## Views
 
-### Topology
+### Nodes
 
-Nodes are displayed as cards grouped by pool (inferred from naming conventions). Each pod is a colored square inside its node. Hover to see pod details, click to open the detail panel.
+Each node is a card, with its pods as colored dots inside. Group nodes by pool, role, subnet, or any label. Color the dots by status, CPU usage, or memory usage. Sort by age, name, or severity (hottest or most broken first).
 
-### List
+### Workloads
 
-A table view with columns: Namespace, Name, Containers, Status, Ready, Restarts, Age, Tag. Columns are resizable by dragging. Group by:
+Each Deployment, StatefulSet, DaemonSet and Job is a card, with its pods as colored dots. Live rollout progress bars, degraded detection. Same color and sort modes as Nodes.
+
+### Pods
+
+A table view with columns: Namespace, Name, Containers, Status, Ready, Restarts, Age, Tag. Columns are sortable and resizable by dragging. Group by:
 
 - **Flat** — All pods in a single list
 - **Node** — Pods grouped under their node
